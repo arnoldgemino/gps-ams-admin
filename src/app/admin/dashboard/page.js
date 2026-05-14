@@ -80,14 +80,17 @@ export default function AdminDashboardPage() {
 
         if (!alive) return;
 
-        if (
-          !summaryRes.ok ||
-          !paroleesRes.ok ||
-          !officersRes.ok ||
-          !alertsRes.ok ||
-          !liveRes.ok
-        ) {
-          setMapError("Dashboard data not available yet.");
+        const failedEndpoints = [];
+        if (!summaryRes.ok) failedEndpoints.push("dashboard-summary");
+        if (!paroleesRes.ok) failedEndpoints.push("parolees-overview");
+        if (!officersRes.ok) failedEndpoints.push("officer-summary");
+        if (!alertsRes.ok) failedEndpoints.push("recent-alerts");
+        if (!liveRes.ok) failedEndpoints.push("live-locations");
+
+        if (failedEndpoints.length) {
+          setMapError(
+            `Dashboard data not available yet. Failed: ${failedEndpoints.join(", ")}`
+          );
           return;
         }
 
