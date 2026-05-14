@@ -109,16 +109,14 @@ CREATE TABLE "Alert" (
 CREATE TABLE "Geofence" (
     "id" TEXT NOT NULL,
     "paroleeId" TEXT NOT NULL,
-    "zoneName" TEXT NOT NULL,
-    "zoneType" TEXT NOT NULL,
-    "shape" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "radiusMeters" INTEGER NOT NULL,
     "centerLat" DOUBLE PRECISION,
     "centerLng" DOUBLE PRECISION,
-    "radiusM" DOUBLE PRECISION,
-    "polygon" JSONB,
-    "schedule" JSONB,
-    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "status" TEXT NOT NULL DEFAULT 'ACTIVE',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "Geofence_pkey" PRIMARY KEY ("id")
 );
@@ -132,6 +130,27 @@ CREATE TABLE "AuditLog" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "AuditLog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "SystemSettings" (
+    "id" TEXT NOT NULL,
+    "systemName" TEXT NOT NULL DEFAULT 'GPS-Based Ankle Monitoring System',
+    "organizationName" TEXT,
+    "supportEmail" TEXT,
+    "defaultMapLat" DOUBLE PRECISION NOT NULL DEFAULT 7.9064,
+    "defaultMapLng" DOUBLE PRECISION NOT NULL DEFAULT 125.0942,
+    "defaultGeofenceRadiusM" INTEGER NOT NULL DEFAULT 300,
+    "telemetryIntervalSec" INTEGER NOT NULL DEFAULT 10,
+    "lowBatteryThreshold" INTEGER NOT NULL DEFAULT 20,
+    "liveFeedRefreshSec" INTEGER NOT NULL DEFAULT 5,
+    "geofenceBreachAlerts" BOOLEAN NOT NULL DEFAULT true,
+    "deviceTamperAlerts" BOOLEAN NOT NULL DEFAULT true,
+    "lowBatteryAlerts" BOOLEAN NOT NULL DEFAULT true,
+    "offlineAlerts" BOOLEAN NOT NULL DEFAULT true,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "SystemSettings_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -181,6 +200,9 @@ CREATE INDEX "Alert_status_idx" ON "Alert"("status");
 
 -- CreateIndex
 CREATE INDEX "Geofence_paroleeId_idx" ON "Geofence"("paroleeId");
+
+-- CreateIndex
+CREATE INDEX "Geofence_status_idx" ON "Geofence"("status");
 
 -- CreateIndex
 CREATE INDEX "AuditLog_createdAt_idx" ON "AuditLog"("createdAt");
