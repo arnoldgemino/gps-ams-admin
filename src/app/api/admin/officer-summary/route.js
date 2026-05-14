@@ -1,5 +1,14 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+
+function jsonNoCache(data, init = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set("Cache-Control", "no-store, max-age=0");
+  return NextResponse.json(data, { ...init, headers });
+}
 
 export async function GET() {
   try {
@@ -8,6 +17,10 @@ export async function GET() {
       take: 10,
     });
 
+    if (!officers.length) {
+      return jsonNoCache({ items: [] }, { status: 200 });
+    }
+
     const officerIds = officers.map((o) => o.id);
 
     const assignments = await prisma.officerParoleeAssignment.findMany({
@@ -15,10 +28,20 @@ export async function GET() {
         status: "ACTIVE",
         officerId: { in: officerIds },
       },
+      select: {
+        officerId: true,
+        paroleeId: true,
+      },
     });
 
     const openAlerts = await prisma.alert.findMany({
-      where: { status: "OPEN" },
+      where: {
+        status: "OPEN",
+      },
+      select: {
+        officerId: true,
+        paroleeId: true,
+      },
     });
 
     const assignedMap = new Map();
@@ -34,7 +57,11 @@ export async function GET() {
         assignment.officerId,
         (assignedMap.get(assignment.officerId) || 0) + 1
       );
-      paroleeSetMap.get(assignment.officerId)?.add(assignment.paroleeId);
+
+      const set = paroleeSetMap.get(assignment.officerId);
+      if (set) {
+        set.add(assignment.paroleeId);
+      }
     }
 
     const items = officers.map((o) => {
@@ -47,19 +74,22 @@ export async function GET() {
         }
       }
 
+      const assigned = assignedMap.get(o.id) || 0;
+
       return {
         id: o.id,
         officer: `${o.badgeId} - ${o.fullName}`,
-        assigned: assignedMap.get(o.id) || 0,
-        active: assignedMap.get(o.id) || 0,
+        assigned,
+        active: assigned,
         alerts: alertCount,
       };
     });
 
-    return NextResponse.json({ items });
+    return jsonNoCache({ items }, { status: 200 });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json(
+    console.error("GET /api/admin/officer-summary error:", error);
+
+    return jsonNoCache(
       { error: "Failed to load officer summary" },
       { status: 500 }
     );

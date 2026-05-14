@@ -1,74 +1,122 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+
+function jsonNoCache(data, init = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set("Cache-Control", "no-store, max-age=0");
+  return NextResponse.json(data, { ...init, headers });
+}
 
 export async function GET() {
   try {
     const parolees = await prisma.parolee.findMany({
       orderBy: { createdAt: "desc" },
       take: 20,
+      select: {
+        id: true,
+        paroleeNo: true,
+        fullName: true,
+      },
     });
+
+    if (!parolees.length) {
+      return jsonNoCache({ items: [] }, { status: 200 });
+    }
 
     const paroleeIds = parolees.map((p) => p.id);
 
-    const [officerAssignments, deviceAssignments, telemetryRows, openAlerts] =
-      await Promise.all([
-        prisma.officerParoleeAssignment.findMany({
-          where: {
-            status: "ACTIVE",
-            paroleeId: { in: paroleeIds },
+    const officerAssignments = await prisma.officerParoleeAssignment.findMany({
+      where: {
+        status: "ACTIVE",
+        paroleeId: { in: paroleeIds },
+      },
+      orderBy: [
+        { paroleeId: "asc" },
+        { startAt: "desc" },
+      ],
+      distinct: ["paroleeId"],
+      select: {
+        paroleeId: true,
+        officer: {
+          select: {
+            badgeId: true,
+            fullName: true,
           },
-          include: { officer: true },
-          orderBy: { startAt: "desc" },
-        }),
-        prisma.deviceAssignment.findMany({
-          where: {
-            status: "ACTIVE",
-            paroleeId: { in: paroleeIds },
+        },
+      },
+    });
+
+    const deviceAssignments = await prisma.deviceAssignment.findMany({
+      where: {
+        status: "ACTIVE",
+        paroleeId: { in: paroleeIds },
+      },
+      orderBy: [
+        { paroleeId: "asc" },
+        { startAt: "desc" },
+      ],
+      distinct: ["paroleeId"],
+      select: {
+        paroleeId: true,
+        device: {
+          select: {
+            deviceCode: true,
           },
-          include: { device: true },
-          orderBy: { startAt: "desc" },
-        }),
-        prisma.telemetry.findMany({
-          where: {
-            paroleeId: { in: paroleeIds },
-          },
-          orderBy: { createdAt: "desc" },
-        }),
-        prisma.alert.findMany({
-          where: {
-            paroleeId: { in: paroleeIds },
-            status: "OPEN",
-          },
-          orderBy: { createdAt: "desc" },
-        }),
-      ]);
+        },
+      },
+    });
+
+    const telemetryRows = await prisma.telemetry.findMany({
+      where: {
+        paroleeId: { in: paroleeIds },
+      },
+      orderBy: [
+        { paroleeId: "asc" },
+        { createdAt: "desc" },
+      ],
+      distinct: ["paroleeId"],
+      select: {
+        paroleeId: true,
+        createdAt: true,
+      },
+    });
+
+    const openAlerts = await prisma.alert.findMany({
+      where: {
+        paroleeId: { in: paroleeIds },
+        status: "OPEN",
+      },
+      orderBy: [
+        { paroleeId: "asc" },
+        { createdAt: "desc" },
+      ],
+      distinct: ["paroleeId"],
+      select: {
+        paroleeId: true,
+      },
+    });
 
     const officerMap = new Map();
     for (const item of officerAssignments) {
-      if (!officerMap.has(item.paroleeId)) {
-        officerMap.set(item.paroleeId, item.officer);
-      }
+      officerMap.set(item.paroleeId, item.officer);
     }
 
     const deviceMap = new Map();
     for (const item of deviceAssignments) {
-      if (!deviceMap.has(item.paroleeId)) {
-        deviceMap.set(item.paroleeId, item.device);
-      }
+      deviceMap.set(item.paroleeId, item.device);
     }
 
     const telemetryMap = new Map();
     for (const item of telemetryRows) {
-      if (!telemetryMap.has(item.paroleeId)) {
-        telemetryMap.set(item.paroleeId, item);
-      }
+      telemetryMap.set(item.paroleeId, item);
     }
 
     const alertMap = new Map();
     for (const item of openAlerts) {
-      if (!alertMap.has(item.paroleeId)) {
-        alertMap.set(item.paroleeId, item);
-      }
+      alertMap.set(item.paroleeId, item);
     }
 
     const items = parolees.map((p) => {
@@ -91,10 +139,11 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ items });
+    return jsonNoCache({ items }, { status: 200 });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json(
+    console.error("GET /api/admin/parolees-overview error:", error);
+
+    return jsonNoCache(
       { error: "Failed to load parolees overview" },
       { status: 500 }
     );
