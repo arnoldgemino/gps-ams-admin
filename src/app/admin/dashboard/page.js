@@ -72,19 +72,30 @@ export default function AdminDashboardPage() {
           fetch("/api/admin/live-locations", { cache: "no-store" }),
         ]);
 
-        const summaryData = await summaryRes.json();
-        const paroleesData = await paroleesRes.json();
-        const officersData = await officersRes.json();
-        const alertsData = await alertsRes.json();
-        const liveData = await liveRes.json();
+        const summaryData = summaryRes.ok ? await summaryRes.json() : null;
+        const paroleesData = paroleesRes.ok ? await paroleesRes.json() : null;
+        const officersData = officersRes.ok ? await officersRes.json() : null;
+        const alertsData = alertsRes.ok ? await alertsRes.json() : null;
+        const liveData = liveRes.ok ? await liveRes.json() : null;
 
         if (!alive) return;
 
+        if (
+          !summaryRes.ok ||
+          !paroleesRes.ok ||
+          !officersRes.ok ||
+          !alertsRes.ok ||
+          !liveRes.ok
+        ) {
+          setMapError("Dashboard data not available yet.");
+          return;
+        }
+
         setSummary({
-          totalParolees: String(summaryData.totalParolees ?? 0),
-          activeAMSDevices: String(summaryData.activeAMSDevices ?? 0),
-          probationOfficers: String(summaryData.probationOfficers ?? 0),
-          unresolvedAlerts: String(summaryData.unresolvedAlerts ?? 0),
+          totalParolees: String(summaryData.totalParolees ?? "0"),
+          activeAMSDevices: String(summaryData.activeAMSDevices ?? "0"),
+          probationOfficers: String(summaryData.probationOfficers ?? "0"),
+          unresolvedAlerts: String(summaryData.unresolvedAlerts ?? "0"),
         });
 
         setParolees(Array.isArray(paroleesData.items) ? paroleesData.items : []);
