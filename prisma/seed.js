@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   const email = "admin@gpsams.com";
-  const password = "Admin123!"; // ✅ choose one and stick to it
+  const password = "Admin123!"; 
 
   const hash = await bcrypt.hash(password, 10);
 
