@@ -1,0 +1,239 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+}
+
+enum OfficerStatus {
+  ACTIVE
+  ON_LEAVE
+  INACTIVE
+}
+
+enum ParoleeStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum DeviceStatus {
+  IN_SERVICE
+  IN_STOCK
+  MAINTENANCE
+  LOST
+  DECOMMISSIONED
+}
+
+enum AssignmentStatus {
+  ACTIVE
+  ENDED
+}
+
+enum AlertType {
+  GEOFENCE
+  TAMPER
+  LOW_BATTERY
+  OFFLINE
+}
+
+enum AlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum GeofenceType {
+  INCLUSION
+  EXCLUSION
+}
+
+enum GeofenceStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum TamperState {
+  OK
+  TAMPER
+}
+
+model Admin {
+  id        String   @id @default(cuid())
+  fullName  String
+  email     String   @unique
+  password  String
+  role      UserRole @default(ADMIN)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  auditLogs          AuditLog[]
+  officerAssignments OfficerParoleeAssignment[]
+}
+
+model Officer {
+  id        String        @id @default(cuid())
+  badgeId   String        @unique
+  fullName  String
+  email     String        @unique
+  password  String
+  status    OfficerStatus @default(ACTIVE)
+  phone     String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  assignments OfficerParoleeAssignment[]
+  alerts      Alert[]
+}
+
+model Parolee {
+  id        String        @id @default(cuid())
+  paroleeNo String        @unique
+  fullName  String
+  status    ParoleeStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  officerAssignments OfficerParoleeAssignment[]
+  deviceAssignments  DeviceAssignment[]
+  telemetry          Telemetry[]
+  alerts             Alert[]
+  geofences          Geofence[]
+}
+
+model Device {
+  id           String       @id @default(cuid())
+  deviceCode   String       @unique
+  serialNumber String       @unique
+  status       DeviceStatus @default(IN_SERVICE)
+  apiKey       String       @unique
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  assignments DeviceAssignment[]
+  telemetry   Telemetry[]
+}
+
+model OfficerParoleeAssignment {
+  id                String           @id @default(cuid())
+  officerId         String
+  paroleeId         String
+  startAt           DateTime         @default(now())
+  endAt             DateTime?
+  status            AssignmentStatus @default(ACTIVE)
+  assignedByAdminId String?
+
+  officer    Officer @relation(fields: [officerId], references: [id])
+  parolee    Parolee @relation(fields: [paroleeId], references: [id])
+  assignedBy Admin?  @relation(fields: [assignedByAdminId], references: [id])
+
+  @@index([officerId])
+  @@index([paroleeId])
+  @@index([status])
+}
+
+model DeviceAssignment {
+  id        String           @id @default(cuid())
+  deviceId  String
+  paroleeId String
+  startAt   DateTime         @default(now())
+  endAt     DateTime?
+  status    AssignmentStatus @default(ACTIVE)
+
+  device  Device  @relation(fields: [deviceId], references: [id])
+  parolee Parolee @relation(fields: [paroleeId], references: [id])
+
+  @@index([deviceId])
+  @@index([paroleeId])
+  @@index([status])
+}
+
+model Telemetry {
+  id            String      @id @default(cuid())
+  deviceId      String
+  paroleeId     String
+  lat           Float
+  lng           Float
+  batteryLevel  Int
+  signalRssiDbm Int?
+  tamperStatus  TamperState @default(OK)
+  createdAt     DateTime    @default(now())
+
+  device  Device  @relation(fields: [deviceId], references: [id])
+  parolee Parolee @relation(fields: [paroleeId], references: [id])
+
+  @@index([paroleeId, createdAt])
+  @@index([deviceId, createdAt])
+}
+
+model Alert {
+  id         String      @id @default(cuid())
+  paroleeId  String
+  officerId  String?
+  type       AlertType
+  details    String?
+  status     AlertStatus @default(OPEN)
+  createdAt  DateTime    @default(now())
+  resolvedAt DateTime?
+
+  parolee Parolee  @relation(fields: [paroleeId], references: [id])
+  officer Officer? @relation(fields: [officerId], references: [id])
+
+  @@index([paroleeId, createdAt])
+  @@index([status])
+}
+
+model Geofence {
+  id           String         @id @default(cuid())
+  paroleeId    String
+  name         String
+  type         GeofenceType
+  radiusMeters Int
+  centerLat    Float
+  centerLng    Float
+  status       GeofenceStatus @default(ACTIVE)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  parolee Parolee @relation(fields: [paroleeId], references: [id])
+
+  @@index([paroleeId])
+  @@index([status])
+}
+
+model SystemSettings {
+  id                     String  @id @default(cuid())
+  systemName             String  @default("GPS-Based Ankle Monitoring System")
+  organizationName       String?
+  supportEmail           String?
+  defaultMapLat          Float   @default(7.9064)
+  defaultMapLng          Float   @default(125.0942)
+  defaultGeofenceRadiusM Int     @default(300)
+  telemetryIntervalSec   Int     @default(10)
+  lowBatteryThreshold    Int     @default(20)
+  liveFeedRefreshSec     Int     @default(5)
+
+  geofenceBreachAlerts Boolean @default(true)
+  deviceTamperAlerts   Boolean @default(true)
+  lowBatteryAlerts     Boolean @default(true)
+  offlineAlerts        Boolean @default(true)
+
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  adminId   String?
+  action    String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  admin Admin? @relation(fields: [adminId], references: [id])
+
+  @@index([createdAt])
+}
