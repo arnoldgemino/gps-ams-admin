@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -28,11 +28,18 @@ const sectionCard =
 const btnSecondary =
   "inline-flex items-center justify-center rounded-xl border border-sky-400/30 bg-sky-500/15 px-4 py-2 text-sm font-medium text-sky-100 transition hover:bg-sky-500/25 active:scale-[0.99]";
 
-const btnGhost =
-  "inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-medium text-white transition hover:bg-white/[0.10] active:scale-[0.99]";
-
 const btnDanger =
   "inline-flex items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/15 px-4 py-2 text-sm font-medium text-rose-100 transition hover:bg-rose-500/25 active:scale-[0.99]";
+
+const REFRESH_MS = 20000; // 20 seconds
+
+async function readJsonSafe(res) {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
 
 export default function AdminDashboardPage() {
   const router = useRouter();
@@ -50,13 +57,24 @@ export default function AdminDashboardPage() {
   const [markers, setMarkers] = useState([]);
   const [mapError, setMapError] = useState("");
   const [lastSync, setLastSync] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const defaultCenter = [7.9064, 125.0942];
 
+  const aliveRef = useRef(true);
+  const inFlightRef = useRef(false);
+  const intervalRef = useRef(null);
+
   useEffect(() => {
-    let alive = true;
+    aliveRef.current = true;
 
     async function loadDashboard() {
+      if (!aliveRef.current) return;
+      if (document.hidden) return;
+      if (inFlightRef.current) return;
+
+      inFlightRef.current = true;
+
       try {
         const [
           summaryRes,
@@ -72,13 +90,21 @@ export default function AdminDashboardPage() {
           fetch("/api/admin/live-locations", { cache: "no-store" }),
         ]);
 
-        const summaryData = summaryRes.ok ? await summaryRes.json() : null;
-        const paroleesData = paroleesRes.ok ? await paroleesRes.json() : null;
-        const officersData = officersRes.ok ? await officersRes.json() : null;
-        const alertsData = alertsRes.ok ? await alertsRes.json() : null;
-        const liveData = liveRes.ok ? await liveRes.json() : null;
+        const [
+          summaryData,
+          paroleesData,
+          officersData,
+          alertsData,
+          liveData,
+        ] = await Promise.all([
+          readJsonSafe(summaryRes),
+          readJsonSafe(paroleesRes),
+          readJsonSafe(officersRes),
+          readJsonSafe(alertsRes),
+          readJsonSafe(liveRes),
+        ]);
 
-        if (!alive) return;
+        if (!aliveRef.current) return;
 
         const failedEndpoints = [];
         if (!summaryRes.ok) failedEndpoints.push("dashboard-summary");
@@ -95,31 +121,44 @@ export default function AdminDashboardPage() {
         }
 
         setSummary({
-          totalParolees: String(summaryData.totalParolees ?? "0"),
-          activeAMSDevices: String(summaryData.activeAMSDevices ?? "0"),
-          probationOfficers: String(summaryData.probationOfficers ?? "0"),
-          unresolvedAlerts: String(summaryData.unresolvedAlerts ?? "0"),
+          totalParolees: String(summaryData?.totalParolees ?? "0"),
+          activeAMSDevices: String(summaryData?.activeAMSDevices ?? "0"),
+          probationOfficers: String(summaryData?.probationOfficers ?? "0"),
+          unresolvedAlerts: String(summaryData?.unresolvedAlerts ?? "0"),
         });
 
-        setParolees(Array.isArray(paroleesData.items) ? paroleesData.items : []);
-        setOfficers(Array.isArray(officersData.items) ? officersData.items : []);
-        setAlerts(Array.isArray(alertsData.items) ? alertsData.items : []);
-        setMarkers(Array.isArray(liveData.items) ? liveData.items : []);
+        setParolees(Array.isArray(paroleesData?.items) ? paroleesData.items : []);
+        setOfficers(Array.isArray(officersData?.items) ? officersData.items : []);
+        setAlerts(Array.isArray(alertsData?.items) ? alertsData.items : []);
+        setMarkers(Array.isArray(liveData?.items) ? liveData.items : []);
         setMapError("");
         setLastSync(new Date());
       } catch (error) {
-        console.error(error);
-        if (!alive) return;
+        console.error("Dashboard fetch error:", error);
+        if (!aliveRef.current) return;
         setMapError("Dashboard data not available yet.");
+      } finally {
+        if (aliveRef.current) {
+          setLoading(false);
+        }
+        inFlightRef.current = false;
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (!document.hidden) {
+        loadDashboard();
       }
     }
 
     loadDashboard();
-    const interval = setInterval(loadDashboard, 5000);
+    intervalRef.current = setInterval(loadDashboard, REFRESH_MS);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      alive = false;
-      clearInterval(interval);
+      aliveRef.current = false;
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
@@ -218,6 +257,23 @@ export default function AdminDashboardPage() {
           </aside>
 
           <main className="col-span-12 h-[calc(95vh-5rem)] space-y-6 overflow-y-auto pb-0.5 md:col-span-9 lg:col-span-10">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-slate-300">
+                {loading
+                  ? "Loading dashboard..."
+                  : lastSync
+                  ? `Last sync: ${lastSync.toLocaleTimeString()}`
+                  : "Waiting for data..."}
+              </div>
+
+              <button
+                className={btnSecondary}
+                onClick={() => window.location.reload()}
+              >
+                Refresh
+              </button>
+            </div>
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {stats.map((s) => (
                 <div
