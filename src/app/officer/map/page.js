@@ -11,12 +11,11 @@ const Marker = dynamic(() => import("react-leaflet").then((m) => m.Marker), { ss
 const Popup = dynamic(() => import("react-leaflet").then((m) => m.Popup), { ssr: false });
 
 export default function OfficerMapPage() {
-  const [officerName, setOfficerName] = useState("Officer");
-
-  useEffect(() => {
-    const name = localStorage.getItem("officerName");
-    if (name) setOfficerName(name);
-  }, []);
+  const [officerName, setOfficerName] = useState(() =>
+    typeof window !== "undefined"
+      ? localStorage.getItem("officerName") ?? "Officer"
+      : "Officer"
+  );
 
   function handleLogout() {
     localStorage.removeItem("role");

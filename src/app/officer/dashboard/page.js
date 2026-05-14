@@ -39,12 +39,11 @@ const btnDanger =
 export default function OfficerDashboardPage() {
   const center = useMemo(() => ({ lat: 7.9064, lng: 125.0942 }), []);
 
-  const [officerName, setOfficerName] = useState("Officer");
-
-  useEffect(() => {
-    const name = localStorage.getItem("officerName");
-    if (name) setOfficerName(name);
-  }, []);
+  const [officerName, setOfficerName] = useState(() =>
+    typeof window !== "undefined"
+      ? localStorage.getItem("officerName") ?? "Officer"
+      : "Officer"
+  );
 
   const assigned = useMemo(
     () => [

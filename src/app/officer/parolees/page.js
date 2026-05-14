@@ -58,11 +58,11 @@ export default function OfficerParoleesPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("ALL");
 
-  const [officerName, setOfficerName] = useState("Officer");
-  useEffect(() => {
-    const name = localStorage.getItem("officerName");
-    if (name) setOfficerName(name);
-  }, []);
+  const [officerName, setOfficerName] = useState(() =>
+    typeof window !== "undefined"
+      ? localStorage.getItem("officerName") ?? "Officer"
+      : "Officer"
+  );
 
   const filtered = rows.filter((r) => {
     const s = search.trim().toLowerCase();

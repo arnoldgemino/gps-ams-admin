@@ -58,11 +58,11 @@ export default function OfficerAlertsPage() {
   const [filterStatus, setFilterStatus] = useState("ALL");
   const [filterSeverity, setFilterSeverity] = useState("ALL");
 
-  const [officerName, setOfficerName] = useState("Officer");
-  useEffect(() => {
-    const name = localStorage.getItem("officerName");
-    if (name) setOfficerName(name);
-  }, []);
+  const [officerName, setOfficerName] = useState(() =>
+    typeof window !== "undefined"
+      ? localStorage.getItem("officerName") ?? "Officer"
+      : "Officer"
+  );
 
   const filtered = alerts.filter((a) => {
     const okStatus = filterStatus === "ALL" ? true : a.status === filterStatus;

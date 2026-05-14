@@ -21,32 +21,36 @@ const btnDanger =
 export default function OfficerProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
 
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
+  const [officerName, setOfficerName] = useState(() =>
+    typeof window !== "undefined"
+      ? localStorage.getItem("officerName") ?? ""
+      : ""
+  );
+  const [officerEmail, setOfficerEmail] = useState(() =>
+    typeof window !== "undefined"
+      ? localStorage.getItem("officerEmail") ?? ""
+      : ""
+  );
+  const [officerBadge, setOfficerBadge] = useState(() =>
+    typeof window !== "undefined"
+      ? localStorage.getItem("officerBadgeId") ?? ""
+      : ""
+  );
+
+  const [fullName, setFullName] = useState(() =>
+    typeof window !== "undefined"
+      ? localStorage.getItem("officerName") ?? ""
+      : ""
+  );
+  const [email, setEmail] = useState(() =>
+    typeof window !== "undefined"
+      ? localStorage.getItem("officerEmail") ?? ""
+      : ""
+  );
   const [phone, setPhone] = useState("");
   const [area, setArea] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-
-  const [officerName, setOfficerName] = useState("");
-  const [officerEmail, setOfficerEmail] = useState("");
-  const [officerBadge, setOfficerBadge] = useState("");
-
-  useEffect(() => {
-    const name = localStorage.getItem("officerName");
-    const mail = localStorage.getItem("officerEmail");
-    const badge = localStorage.getItem("officerBadgeId");
-
-    if (name) {
-      setOfficerName(name);
-      setFullName(name);
-    }
-    if (mail) {
-      setOfficerEmail(mail);
-      setEmail(mail);
-    }
-    if (badge) setOfficerBadge(badge);
-  }, []);
 
   function handleLogout() {
     localStorage.removeItem("role");
