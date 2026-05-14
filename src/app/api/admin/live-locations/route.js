@@ -1,49 +1,82 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+function jsonNoCache(data, init = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set("Cache-Control", "no-store, max-age=0");
+  return NextResponse.json(data, { ...init, headers });
+}
+
 export async function GET() {
   try {
-    const settings = await prisma.systemSettings.findFirst();
-    const telemetryIntervalSec = settings?.telemetryIntervalSec ?? 10;
+    const settings = await prisma.systemSettings.findFirst({
+      select: {
+        telemetryIntervalSec: true,
+      },
+    });
 
-    // after 6 missed intervals or minimum 60 seconds, treat as offline/stale
+    const telemetryIntervalSec = settings?.telemetryIntervalSec ?? 10;
     const offlineThresholdSec = Math.max(telemetryIntervalSec * 6, 60);
     const cutoff = new Date(Date.now() - offlineThresholdSec * 1000);
 
     const telemetryRows = await prisma.telemetry.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 300,
-      include: {
-        parolee: true,
+      where: {
+        createdAt: {
+          gte: cutoff,
+        },
+      },
+      orderBy: [
+        { paroleeId: "asc" },
+        { createdAt: "desc" },
+      ],
+      distinct: ["paroleeId"],
+      select: {
+        paroleeId: true,
+        lat: true,
+        lng: true,
+        createdAt: true,
+        parolee: {
+          select: {
+            fullName: true,
+          },
+        },
+      },
+      take: 100,
+    });
+
+    if (!telemetryRows.length) {
+      return jsonNoCache(
+        {
+          items: [],
+          offlineThresholdSec,
+        },
+        { status: 200 }
+      );
+    }
+
+    const paroleeIds = telemetryRows.map((r) => r.paroleeId);
+
+    const openAlerts = await prisma.alert.findMany({
+      where: {
+        paroleeId: { in: paroleeIds },
+        status: "OPEN",
+      },
+      orderBy: [
+        { paroleeId: "asc" },
+        { createdAt: "desc" },
+      ],
+      distinct: ["paroleeId"],
+      select: {
+        paroleeId: true,
       },
     });
 
-    const latestByParolee = [];
-    const seen = new Set();
-
-    for (const row of telemetryRows) {
-      if (!seen.has(row.paroleeId)) {
-        seen.add(row.paroleeId);
-        latestByParolee.push(row);
-      }
-    }
-
-    const freshRows = latestByParolee.filter((row) => row.createdAt >= cutoff);
-
-    const paroleeIds = freshRows.map((r) => r.paroleeId);
-
-    const openAlerts = paroleeIds.length
-      ? await prisma.alert.findMany({
-          where: {
-            paroleeId: { in: paroleeIds },
-            status: "OPEN",
-          },
-        })
-      : [];
-
     const alertSet = new Set(openAlerts.map((a) => a.paroleeId));
 
-    const items = freshRows.map((row) => ({
+    const items = telemetryRows.map((row) => ({
       paroleeId: row.paroleeId,
       name: row.parolee?.fullName || row.paroleeId,
       lat: row.lat,
@@ -52,13 +85,17 @@ export async function GET() {
       status: alertSet.has(row.paroleeId) ? "ALERT" : "COMPLIANT",
     }));
 
-    return NextResponse.json({
-      items,
-      offlineThresholdSec,
-    });
+    return jsonNoCache(
+      {
+        items,
+        offlineThresholdSec,
+      },
+      { status: 200 }
+    );
   } catch (error) {
-    console.error(error);
-    return NextResponse.json(
+    console.error("GET /api/admin/live-locations error:", error);
+
+    return jsonNoCache(
       { error: "Failed to load live locations" },
       { status: 500 }
     );

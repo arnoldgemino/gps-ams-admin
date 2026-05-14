@@ -1,5 +1,14 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+
+function jsonNoCache(data, init = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set("Cache-Control", "no-store, max-age=0");
+  return NextResponse.json(data, { ...init, headers });
+}
 
 export async function GET() {
   try {
@@ -7,9 +16,22 @@ export async function GET() {
       where: { status: "OPEN" },
       orderBy: { createdAt: "desc" },
       take: 10,
-      include: {
-        parolee: true,
-        officer: true,
+      select: {
+        id: true,
+        type: true,
+        details: true,
+        createdAt: true,
+        paroleeId: true,
+        parolee: {
+          select: {
+            fullName: true,
+          },
+        },
+        officer: {
+          select: {
+            fullName: true,
+          },
+        },
       },
     });
 
@@ -22,10 +44,11 @@ export async function GET() {
       officer: a.officer?.fullName || "—",
     }));
 
-    return NextResponse.json({ items });
+    return jsonNoCache({ items }, { status: 200 });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json(
+    console.error("GET /api/admin/recent-alerts error:", error);
+
+    return jsonNoCache(
       { error: "Failed to load alerts" },
       { status: 500 }
     );
