@@ -10,9 +10,26 @@ function jsonNoCache(data, init = {}) {
   return NextResponse.json(data, { ...init, headers });
 }
 
+function getRouteId(req, params) {
+  const fromParams = String(params?.id || "").trim();
+  if (fromParams) return fromParams;
+
+  try {
+    const pathname = new URL(req.url).pathname;
+    const segments = pathname.split("/").filter(Boolean);
+    if (segments[0] === "api" && segments[1] === "devices") {
+      return String(segments[2] || "").trim();
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
 export async function GET(req, { params }) {
   try {
-    const id = String(params?.id || "").trim();
+    const id = getRouteId(req, params);
 
     if (!id) {
       return jsonNoCache({ error: "Device ID is required" }, { status: 400 });
@@ -120,7 +137,7 @@ export async function GET(req, { params }) {
 
 export async function PUT(req, { params }) {
   try {
-    const id = String(params?.id || "").trim();
+    const id = getRouteId(req, params);
     const body = await req.json();
 
     if (!id) {

@@ -10,9 +10,26 @@ function jsonNoCache(data, init = {}) {
   return NextResponse.json(data, { ...init, headers });
 }
 
+function getRouteId(req, params) {
+  const fromParams = String(params?.id || "").trim();
+  if (fromParams) return fromParams;
+
+  try {
+    const pathname = new URL(req.url).pathname;
+    const segments = pathname.split("/").filter(Boolean);
+    if (segments[0] === "api" && segments[1] === "devices") {
+      return String(segments[2] || "").trim();
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
 export async function POST(req, { params }) {
   try {
-    const deviceId = String(params?.id || "").trim();
+    const deviceId = getRouteId(req, params);
 
     const body = await req.json();
     const paroleeId = String(body.paroleeId || "").trim();
