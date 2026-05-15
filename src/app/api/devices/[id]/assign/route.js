@@ -12,7 +12,7 @@ function jsonNoCache(data, init = {}) {
 
 export async function POST(req, { params }) {
   try {
-    const { id: deviceId } = await params;
+    const deviceId = String(params?.id || "").trim();
 
     const body = await req.json();
     const paroleeId = String(body.paroleeId || "").trim();

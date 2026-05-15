@@ -12,7 +12,7 @@ function jsonNoCache(data, init = {}) {
 
 export async function GET(req, { params }) {
   try {
-    const { id } = params;
+    const id = String(params?.id || "").trim();
 
     if (!id) {
       return jsonNoCache({ error: "Device ID is required" }, { status: 400 });
@@ -120,7 +120,7 @@ export async function GET(req, { params }) {
 
 export async function PUT(req, { params }) {
   try {
-    const { id } = params;
+    const id = String(params?.id || "").trim();
     const body = await req.json();
 
     if (!id) {

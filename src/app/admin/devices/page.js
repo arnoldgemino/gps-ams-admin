@@ -151,6 +151,12 @@ export default function AdminDevicesPage() {
   }
 
   async function fetchDeviceDetail(deviceId) {
+    if (!deviceId) {
+      alert("Device ID is missing. Please reload the page.");
+      setSelectedDeviceDetail(null);
+      return null;
+    }
+
     try {
       setLoadingView(true);
       const res = await fetch(`/api/devices/${deviceId}`, { cache: "no-store" });
@@ -305,6 +311,11 @@ export default function AdminDevicesPage() {
   }
 
   async function handleOpenView(device) {
+    if (!device?.id) {
+      alert("Device ID is missing. Please reload the page.");
+      return;
+    }
+
     setSelectedDevice(device);
     setSelectedDeviceDetail(null);
     setOpenView(true);
@@ -312,6 +323,11 @@ export default function AdminDevicesPage() {
   }
 
   function handleOpenEdit(device) {
+    if (!device?.id) {
+      alert("Device ID is missing. Please reload the page.");
+      return;
+    }
+
     setSelectedDevice(device);
     setEditForm({
       deviceCode: device.deviceCode || "",
@@ -322,13 +338,21 @@ export default function AdminDevicesPage() {
   }
 
   function handleOpenAssign(device) {
+    if (!device?.id) {
+      alert("Device ID is missing. Please reload the page.");
+      return;
+    }
+
     setSelectedDevice(device);
     setAssignForm({ paroleeId: "" });
     setOpenAssign(true);
   }
 
   async function handleUpdateDevice() {
-    if (!selectedDevice) return;
+    if (!selectedDevice?.id) {
+      alert("Device ID is missing. Please reload the page.");
+      return;
+    }
 
     try {
       setSaving(true);
@@ -366,7 +390,10 @@ export default function AdminDevicesPage() {
   }
 
   async function handleAssignDevice() {
-    if (!selectedDevice) return;
+    if (!selectedDevice?.id) {
+      alert("Device ID is missing. Please reload the page.");
+      return;
+    }
     if (!assignForm.paroleeId) {
       alert("Please select a parolee");
       return;
