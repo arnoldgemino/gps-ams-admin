@@ -432,7 +432,7 @@ export default function AdminSettingsPage() {
                               onChange={handleSettingsChange}
                             />
                             <p className="mt-2 text-xs text-slate-400">
-                              Must be between 1 and 30 seconds. Live Feed Refresh is synced automatically.
+                              Must be between 15 and 30 seconds. Live Feed Refresh is synced automatically.
                             </p>
                           </div>
                           <FieldControlled
