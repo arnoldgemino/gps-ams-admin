@@ -69,7 +69,6 @@ export default function AdminGeofencesPage() {
   const [openEdit, setOpenEdit] = useState(false);
 
   const [saving, setSaving] = useState(false);
-  const [loadingParolees, setLoadingParolees] = useState(false);
   const [selected, setSelected] = useState(null);
   const [selectedDetail, setSelectedDetail] = useState(null);
 
@@ -103,6 +102,7 @@ export default function AdminGeofencesPage() {
 
   useEffect(() => {
     fetchGeofences();
+    fetchParolees();
     fetchLiveLocations();
   }, []);
 
@@ -119,7 +119,7 @@ export default function AdminGeofencesPage() {
   async function fetchGeofences() {
     try {
       const res = await fetch("/api/geofences", { cache: "no-store" });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
 
       if (!res.ok) {
         alert(data.error || "Failed to fetch geofences");
@@ -133,40 +133,27 @@ export default function AdminGeofencesPage() {
     }
   }
 
-  async function fetchParolees(showAlert = false) {
+  async function fetchParolees() {
     try {
-      setLoadingParolees(true);
-
       const res = await fetch("/api/parolees", { cache: "no-store" });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
 
       if (!res.ok) {
-        if (showAlert) {
-          alert(data.error || "Failed to fetch parolees");
-        }
+        alert(data.error || "Failed to fetch parolees");
         return;
       }
 
       setParolees(normalizeList(data));
     } catch (error) {
       console.error(error);
-      if (showAlert) {
-        alert("Failed to fetch parolees");
-      }
-    } finally {
-      setLoadingParolees(false);
+      alert("Failed to fetch parolees");
     }
-  }
-
-  async function ensureParoleesLoaded(showAlert = true) {
-    if (parolees.length > 0) return;
-    await fetchParolees(showAlert);
   }
 
   async function fetchLiveLocations(showAlert = false) {
     try {
       const res = await fetch("/api/admin/live-locations", { cache: "no-store" });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
 
       if (!res.ok) {
         if (showAlert) {
@@ -188,7 +175,7 @@ export default function AdminGeofencesPage() {
   async function fetchGeofenceDetail(id) {
     try {
       const res = await fetch(`/api/geofences/${id}`, { cache: "no-store" });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
 
       if (!res.ok) {
         alert(data.error || "Failed to fetch geofence detail");
@@ -252,7 +239,7 @@ export default function AdminGeofencesPage() {
         )}`
       );
 
-      const data = await res.json().catch(() => []);
+      const data = await res.json();
 
       if (!res.ok || !Array.isArray(data) || data.length === 0) {
         alert("Location not found");
@@ -318,7 +305,7 @@ export default function AdminGeofencesPage() {
         }),
       });
 
-      const result = await res.json().catch(() => ({}));
+      const result = await res.json();
 
       if (!res.ok) {
         alert(result.error || "Failed to create geofence");
@@ -353,9 +340,7 @@ export default function AdminGeofencesPage() {
     await fetchGeofenceDetail(geofence.id);
   }
 
-  async function handleOpenEdit(geofence) {
-    await ensureParoleesLoaded(true);
-
+  function handleOpenEdit(geofence) {
     setSelected(geofence);
     setEditForm({
       name: geofence.name || "",
@@ -389,7 +374,7 @@ export default function AdminGeofencesPage() {
         }),
       });
 
-      const result = await res.json().catch(() => ({}));
+      const result = await res.json();
 
       if (!res.ok) {
         alert(result.error || "Failed to update geofence");
@@ -415,7 +400,7 @@ export default function AdminGeofencesPage() {
         method: "POST",
       });
 
-      const result = await res.json().catch(() => ({}));
+      const result = await res.json();
 
       if (!res.ok) {
         alert(result.error || "Failed to disable geofence");
@@ -451,7 +436,7 @@ export default function AdminGeofencesPage() {
         body: JSON.stringify({ ids: activeIds }),
       });
 
-      const result = await res.json().catch(() => ({}));
+      const result = await res.json();
 
       if (!res.ok) {
         alert(result.error || "Failed to bulk disable geofences");
@@ -559,13 +544,7 @@ export default function AdminGeofencesPage() {
               <Link href="/admin/dashboard" className={btnGhost}>
                 ← Dashboard
               </Link>
-              <button
-                onClick={async () => {
-                  await ensureParoleesLoaded(true);
-                  setOpenCreate(true);
-                }}
-                className={btnPrimary}
-              >
+              <button onClick={() => setOpenCreate(true)} className={btnPrimary}>
                 + Create Geofence
               </button>
             </div>
@@ -641,9 +620,7 @@ export default function AdminGeofencesPage() {
 
                 <div className="flex items-center gap-2">
                   <div className="hidden text-xs text-slate-400 sm:block">
-                    {lastLiveSync
-                      ? `Live sync: ${lastLiveSync.toLocaleTimeString()}`
-                      : "Waiting for live data..."}
+                    {lastLiveSync ? `Live sync: ${lastLiveSync.toLocaleTimeString()}` : "Waiting for live data..."}
                   </div>
                   <button className={btnSecondary} onClick={handleMapTools}>
                     {selected ? "Center Selected" : "Center Live"}
@@ -847,7 +824,7 @@ export default function AdminGeofencesPage() {
                 className={selectClass}
               >
                 <option value="" className="bg-slate-900 text-white">
-                  {loadingParolees ? "Loading parolees..." : "Select parolee"}
+                  Select parolee
                 </option>
                 {parolees.map((p) => (
                   <option key={p.id} value={p.id} className="bg-slate-900 text-white">
@@ -979,7 +956,7 @@ export default function AdminGeofencesPage() {
                 className={selectClass}
               >
                 <option value="" className="bg-slate-900 text-white">
-                  {loadingParolees ? "Loading parolees..." : "Select parolee"}
+                  Select parolee
                 </option>
                 {parolees.map((p) => (
                   <option key={p.id} value={p.id} className="bg-slate-900 text-white">

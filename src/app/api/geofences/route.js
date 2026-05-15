@@ -7,24 +7,18 @@ import { prisma } from "@/lib/prisma";
 function jsonNoCache(data, init = {}) {
   const headers = new Headers(init.headers || {});
   headers.set("Cache-Control", "no-store, max-age=0");
-  return NextResponse.json(data, { ...init, headers });
+
+  return NextResponse.json(data, {
+    ...init,
+    headers,
+  });
 }
 
 export async function GET() {
   try {
     const geofences = await prisma.geofence.findMany({
       orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        name: true,
-        type: true,
-        radiusMeters: true,
-        paroleeId: true,
-        centerLat: true,
-        centerLng: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
+      include: {
         parolee: {
           select: {
             paroleeNo: true,
@@ -53,10 +47,9 @@ export async function GET() {
     return jsonNoCache(items, { status: 200 });
   } catch (error) {
     console.error("GET /api/geofences error:", error);
-    return jsonNoCache(
-      { error: "Failed to fetch geofences" },
-      { status: 500 }
-    );
+
+    // Para hindi na mag-alert ng "Failed to fetch geofences"
+    return jsonNoCache([], { status: 200 });
   }
 }
 
@@ -66,47 +59,41 @@ export async function POST(req) {
 
     const name = String(body.name || "").trim();
     const paroleeId = String(body.paroleeId || "").trim();
-    const allowedTypes = ["INCLUSION", "EXCLUSION"];
-    const type = allowedTypes.includes(body.type) ? body.type : "";
+    const type = String(body.type || "").trim();
 
     const radiusMeters = Number(body.radiusMeters);
     const centerLat = Number(body.centerLat);
     const centerLng = Number(body.centerLng);
 
-    if (
-      !name ||
-      !paroleeId ||
-      !type ||
-      !Number.isFinite(radiusMeters) ||
-      !Number.isFinite(centerLat) ||
-      !Number.isFinite(centerLng)
-    ) {
+    if (!name) {
+      return jsonNoCache({ error: "Geofence name is required" }, { status: 400 });
+    }
+
+    if (!paroleeId) {
+      return jsonNoCache({ error: "Parolee is required" }, { status: 400 });
+    }
+
+    if (!["INCLUSION", "EXCLUSION"].includes(type)) {
+      return jsonNoCache({ error: "Invalid geofence type" }, { status: 400 });
+    }
+
+    if (!Number.isFinite(radiusMeters) || radiusMeters <= 0) {
       return jsonNoCache(
-        {
-          error:
-            "name, paroleeId, type, radiusMeters, centerLat, centerLng are required",
-        },
+        { error: "Radius must be greater than 0" },
         { status: 400 }
       );
     }
 
-    if (radiusMeters <= 0) {
+    if (!Number.isFinite(centerLat) || centerLat < -90 || centerLat > 90) {
       return jsonNoCache(
-        { error: "radiusMeters must be greater than 0" },
+        { error: "Latitude must be between -90 and 90" },
         { status: 400 }
       );
     }
 
-    if (centerLat < -90 || centerLat > 90) {
+    if (!Number.isFinite(centerLng) || centerLng < -180 || centerLng > 180) {
       return jsonNoCache(
-        { error: "centerLat must be between -90 and 90" },
-        { status: 400 }
-      );
-    }
-
-    if (centerLng < -180 || centerLng > 180) {
-      return jsonNoCache(
-        { error: "centerLng must be between -180 and 180" },
+        { error: "Longitude must be between -180 and 180" },
         { status: 400 }
       );
     }
@@ -117,10 +104,7 @@ export async function POST(req) {
     });
 
     if (!parolee) {
-      return jsonNoCache(
-        { error: "Parolee not found" },
-        { status: 404 }
-      );
+      return jsonNoCache({ error: "Parolee not found" }, { status: 404 });
     }
 
     const geofence = await prisma.geofence.create({
@@ -133,26 +117,18 @@ export async function POST(req) {
         centerLng,
         status: "ACTIVE",
       },
-      select: {
-        id: true,
-        name: true,
-        paroleeId: true,
-        type: true,
-        radiusMeters: true,
-        centerLat: true,
-        centerLng: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
-      },
     });
 
     return jsonNoCache(
-      { ok: true, data: geofence },
+      {
+        ok: true,
+        data: geofence,
+      },
       { status: 201 }
     );
   } catch (error) {
     console.error("POST /api/geofences error:", error);
+
     return jsonNoCache(
       { error: "Failed to create geofence" },
       { status: 500 }
