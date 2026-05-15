@@ -59,7 +59,10 @@ export async function GET() {
     console.error("GET /api/geofences error:", error);
 
     return jsonNoCache(
-      { error: "Failed to fetch geofences" },
+      {
+        error: "Failed to fetch geofences",
+        details: String(error?.message || error),
+      },
       { status: 500 }
     );
   }
@@ -154,7 +157,10 @@ export async function POST(req) {
     console.error("POST /api/geofences error:", error);
 
     return jsonNoCache(
-      { error: "Failed to create geofence" },
+      {
+        error: "Failed to create geofence",
+        details: String(error?.message || error),
+      },
       { status: 500 }
     );
   }
