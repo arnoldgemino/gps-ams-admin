@@ -18,7 +18,17 @@ export async function GET() {
   try {
     const geofences = await prisma.geofence.findMany({
       orderBy: { createdAt: "desc" },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        radiusMeters: true,
+        paroleeId: true,
+        centerLat: true,
+        centerLng: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
         parolee: {
           select: {
             paroleeNo: true,
@@ -48,8 +58,10 @@ export async function GET() {
   } catch (error) {
     console.error("GET /api/geofences error:", error);
 
-    // Para hindi na mag-alert ng "Failed to fetch geofences"
-    return jsonNoCache([], { status: 200 });
+    return jsonNoCache(
+      { error: "Failed to fetch geofences" },
+      { status: 500 }
+    );
   }
 }
 
@@ -116,6 +128,18 @@ export async function POST(req) {
         centerLat,
         centerLng,
         status: "ACTIVE",
+      },
+      select: {
+        id: true,
+        name: true,
+        paroleeId: true,
+        type: true,
+        radiusMeters: true,
+        centerLat: true,
+        centerLng: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 
