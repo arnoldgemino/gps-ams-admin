@@ -112,7 +112,7 @@ export default function AdminParoleesPage() {
         ams: item.ams || "INACTIVE",
         status: item.status || "WARNING",
         lastSeen: item.lastSeen || "—",
-        dbStatus: item.dbStatus || item.status || "ACTIVE",
+        dbStatus: item.status || "ACTIVE",
       }));
 
       setRows(list);
@@ -302,9 +302,17 @@ export default function AdminParoleesPage() {
     try {
       setSaving(true);
 
+      const paroleeNo = editForm.paroleeNo.trim();
+      const fullName = editForm.fullName.trim();
+
+      if (!paroleeNo || !fullName) {
+        alert("Parolee ID and Full Name are required");
+        return;
+      }
+
       const payload = {
-        paroleeNo: editForm.paroleeNo.trim(),
-        fullName: editForm.fullName.trim(),
+        paroleeNo,
+        fullName,
         status: editForm.status,
       };
 
@@ -319,6 +327,7 @@ export default function AdminParoleesPage() {
       const result = await res.json().catch(() => ({}));
 
       if (!res.ok) {
+        console.error("Update parolee error:", result);
         alert(result.error || result.message || "Failed to update parolee");
         return;
       }
@@ -327,7 +336,7 @@ export default function AdminParoleesPage() {
       await fetchParolees();
       alert("Parolee updated successfully");
     } catch (error) {
-      console.error(error);
+      console.error("handleUpdateParolee error:", error);
       alert("Failed to update parolee");
     } finally {
       setSaving(false);

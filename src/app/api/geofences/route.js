@@ -18,17 +18,7 @@ export async function GET() {
   try {
     const geofences = await prisma.geofence.findMany({
       orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        name: true,
-        type: true,
-        radiusMeters: true,
-        paroleeId: true,
-        centerLat: true,
-        centerLng: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
+      include: {
         parolee: {
           select: {
             paroleeNo: true,
@@ -46,7 +36,7 @@ export async function GET() {
       paroleeId: g.paroleeId,
       paroleeLabel: g.parolee
         ? `${g.parolee.paroleeNo} - ${g.parolee.fullName}`
-        : g.paroleeId,
+        : g.paroleeId || "—",
       centerLat: g.centerLat,
       centerLng: g.centerLng,
       status: g.status,

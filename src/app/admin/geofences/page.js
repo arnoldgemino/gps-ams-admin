@@ -123,14 +123,14 @@ export default function AdminGeofencesPage() {
 
     if (!res.ok) {
       console.error("GET /api/geofences failed:", data);
-      alert(data.details || data.error || "Failed to fetch geofences");
+      setRows([]);
       return;
     }
 
     setRows(normalizeList(data));
   } catch (error) {
     console.error("fetchGeofences network/client error:", error);
-    alert(error.message || "Failed to fetch geofences");
+    setRows([]);
   }
 }
 
@@ -192,7 +192,7 @@ export default function AdminGeofencesPage() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        alert(data.error || "Failed to fetch geofence detail");
+        console.error("Failed to fetch geofence detail:", data);
         return null;
       }
 

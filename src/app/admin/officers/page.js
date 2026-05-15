@@ -90,7 +90,7 @@ export default function AdminOfficersPage() {
   async function fetchOfficers() {
     try {
       const res = await fetch("/api/officers", { cache: "no-store" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         console.error("Failed to fetch officers", data);
@@ -119,7 +119,7 @@ export default function AdminOfficersPage() {
   async function fetchParolees() {
     try {
       const res = await fetch("/api/parolees", { cache: "no-store" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         console.error("Failed to fetch parolees", data);
@@ -144,7 +144,7 @@ export default function AdminOfficersPage() {
     try {
       setLoadingView(true);
       const res = await fetch(`/api/officers/${officerId}`, { cache: "no-store" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         alert(data.error || data.message || "Failed to load officer details");
@@ -198,7 +198,7 @@ export default function AdminOfficersPage() {
         body: JSON.stringify(payload),
       });
 
-      const result = await res.json();
+      const result = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         alert(result.error || result.message || "Failed to create officer");
@@ -257,12 +257,22 @@ export default function AdminOfficersPage() {
     try {
       setSaving(true);
 
+      const badgeId = editForm.badgeId.trim();
+      const fullName = editForm.fullName.trim();
+      const email = editForm.email.trim();
+      const phone = editForm.phone.trim();
+
+      if (!badgeId || !fullName || !email) {
+        alert("Badge ID, Full Name, and Email are required");
+        return;
+      }
+
       const payload = {
-        badgeId: editForm.badgeId.trim(),
-        fullName: editForm.fullName.trim(),
-        email: editForm.email.trim(),
+        badgeId,
+        fullName,
+        email,
         password: editForm.password,
-        phone: editForm.phone.trim(),
+        phone,
         status: editForm.status,
       };
 
@@ -274,9 +284,10 @@ export default function AdminOfficersPage() {
         body: JSON.stringify(payload),
       });
 
-      const result = await res.json();
+      const result = await res.json().catch(() => ({}));
 
       if (!res.ok) {
+        console.error("Update officer error:", result);
         alert(result.error || result.message || "Failed to update officer");
         return;
       }
@@ -285,7 +296,7 @@ export default function AdminOfficersPage() {
       await fetchOfficers();
       alert("Officer updated successfully");
     } catch (error) {
-      console.error(error);
+      console.error("handleUpdateOfficer error:", error);
       alert("Failed to update officer");
     } finally {
       setSaving(false);
@@ -312,7 +323,7 @@ export default function AdminOfficersPage() {
         }),
       });
 
-      const result = await res.json();
+      const result = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         alert(result.error || result.message || "Failed to assign parolee");
