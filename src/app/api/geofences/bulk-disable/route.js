@@ -1,16 +1,31 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+
+function jsonNoCache(data, init = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set("Cache-Control", "no-store, max-age=0");
+  return NextResponse.json(data, { ...init, headers });
+}
 
 export async function POST(req) {
   try {
     const body = await req.json();
-    const ids = Array.isArray(body.ids) ? body.ids : [];
+
+    const ids = Array.isArray(body.ids)
+      ? body.ids.map((id) => String(id).trim()).filter(Boolean)
+      : [];
 
     if (!ids.length) {
-      return NextResponse.json({ error: "No geofence ids provided" }, { status: 400 });
+      return jsonNoCache(
+        { error: "No geofence ids provided" },
+        { status: 400 }
+      );
     }
 
-    await prisma.geofence.updateMany({
+    const result = await prisma.geofence.updateMany({
       where: {
         id: { in: ids },
         status: "ACTIVE",
@@ -20,9 +35,19 @@ export async function POST(req) {
       },
     });
 
-    return NextResponse.json({ ok: true });
+    return jsonNoCache(
+      {
+        ok: true,
+        updatedCount: result.count,
+      },
+      { status: 200 }
+    );
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Failed to bulk disable geofences" }, { status: 500 });
+    console.error("POST /api/geofences/bulk-disable error:", error);
+
+    return jsonNoCache(
+      { error: "Failed to bulk disable geofences" },
+      { status: 500 }
+    );
   }
 }

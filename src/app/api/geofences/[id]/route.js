@@ -1,63 +1,140 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+function jsonNoCache(data, init = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set("Cache-Control", "no-store, max-age=0");
+  return NextResponse.json(data, { ...init, headers });
+}
+
 export async function GET(req, { params }) {
   try {
-    const { id } = await params;
+    const { id } = params;
+
+    if (!id) {
+      return jsonNoCache({ error: "Geofence ID is required" }, { status: 400 });
+    }
 
     const geofence = await prisma.geofence.findUnique({
       where: { id },
-      include: {
-        parolee: true,
+      select: {
+        id: true,
+        name: true,
+        paroleeId: true,
+        type: true,
+        radiusMeters: true,
+        centerLat: true,
+        centerLng: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        parolee: {
+          select: {
+            paroleeNo: true,
+            fullName: true,
+          },
+        },
       },
     });
 
     if (!geofence) {
-      return NextResponse.json({ error: "Geofence not found" }, { status: 404 });
+      return jsonNoCache({ error: "Geofence not found" }, { status: 404 });
     }
 
-    return NextResponse.json({
-      id: geofence.id,
-      name: geofence.name,
-      paroleeId: geofence.paroleeId,
-      paroleeLabel: geofence.parolee
-        ? `${geofence.parolee.paroleeNo} - ${geofence.parolee.fullName}`
-        : geofence.paroleeId,
-      type: geofence.type,
-      radiusMeters: geofence.radiusMeters,
-      centerLat: geofence.centerLat,
-      centerLng: geofence.centerLng,
-      status: geofence.status,
-      createdAt: geofence.createdAt,
-      updatedAt: geofence.updatedAt,
-    });
+    return jsonNoCache(
+      {
+        id: geofence.id,
+        name: geofence.name,
+        paroleeId: geofence.paroleeId,
+        paroleeLabel: geofence.parolee
+          ? `${geofence.parolee.paroleeNo} - ${geofence.parolee.fullName}`
+          : geofence.paroleeId,
+        type: geofence.type,
+        radiusMeters: geofence.radiusMeters,
+        centerLat: geofence.centerLat,
+        centerLng: geofence.centerLng,
+        status: geofence.status,
+        createdAt: geofence.createdAt,
+        updatedAt: geofence.updatedAt,
+      },
+      { status: 200 }
+    );
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Failed to fetch geofence detail" }, { status: 500 });
+    console.error("GET /api/geofences/[id] error:", error);
+
+    return jsonNoCache(
+      { error: "Failed to fetch geofence detail" },
+      { status: 500 }
+    );
   }
 }
 
 export async function PUT(req, { params }) {
   try {
-    const { id } = await params;
+    const { id } = params;
     const body = await req.json();
 
-    const {
-      name,
-      paroleeId,
-      type,
-      radiusMeters,
-      centerLat,
-      centerLng,
-      status,
-    } = body;
+    if (!id) {
+      return jsonNoCache({ error: "Geofence ID is required" }, { status: 400 });
+    }
 
     const existing = await prisma.geofence.findUnique({
       where: { id },
+      select: { id: true },
     });
 
     if (!existing) {
-      return NextResponse.json({ error: "Geofence not found" }, { status: 404 });
+      return jsonNoCache({ error: "Geofence not found" }, { status: 404 });
+    }
+
+    const name = String(body.name || "").trim();
+    const paroleeId = String(body.paroleeId || "").trim();
+    const allowedTypes = ["INCLUSION", "EXCLUSION"];
+    const type = allowedTypes.includes(body.type) ? body.type : "";
+    const allowedStatuses = ["ACTIVE", "DISABLED"];
+    const status = allowedStatuses.includes(body.status) ? body.status : "ACTIVE";
+
+    const radiusMeters = Number(body.radiusMeters);
+    const centerLat = Number(body.centerLat);
+    const centerLng = Number(body.centerLng);
+
+    if (
+      !name ||
+      !paroleeId ||
+      !type ||
+      !Number.isFinite(radiusMeters) ||
+      !Number.isFinite(centerLat) ||
+      !Number.isFinite(centerLng)
+    ) {
+      return jsonNoCache(
+        {
+          error:
+            "name, paroleeId, type, radiusMeters, centerLat, centerLng are required",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (radiusMeters <= 0) {
+      return jsonNoCache(
+        { error: "radiusMeters must be greater than 0" },
+        { status: 400 }
+      );
+    }
+
+    const parolee = await prisma.parolee.findUnique({
+      where: { id: paroleeId },
+      select: { id: true },
+    });
+
+    if (!parolee) {
+      return jsonNoCache(
+        { error: "Parolee not found" },
+        { status: 404 }
+      );
     }
 
     const geofence = await prisma.geofence.update({
@@ -71,11 +148,27 @@ export async function PUT(req, { params }) {
         centerLng,
         status,
       },
+      select: {
+        id: true,
+        name: true,
+        paroleeId: true,
+        type: true,
+        radiusMeters: true,
+        centerLat: true,
+        centerLng: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
-    return NextResponse.json({ ok: true, data: geofence });
+    return jsonNoCache({ ok: true, data: geofence }, { status: 200 });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Failed to update geofence" }, { status: 500 });
+    console.error("PUT /api/geofences/[id] error:", error);
+
+    return jsonNoCache(
+      { error: "Failed to update geofence" },
+      { status: 500 }
+    );
   }
 }

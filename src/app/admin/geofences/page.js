@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 
+const REFRESH_MS = 20000;
+
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false }
@@ -47,6 +49,13 @@ const inputClass =
 const selectClass =
   "mt-1 h-10 w-full rounded-xl border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none focus:ring-2 focus:ring-sky-300/30";
 
+function normalizeList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
 export default function AdminGeofencesPage() {
   const router = useRouter();
 
@@ -66,6 +75,11 @@ export default function AdminGeofencesPage() {
   const [mapCenter, setMapCenter] = useState([7.9064, 125.0942]);
   const [mapZoom, setMapZoom] = useState(13);
   const [mapKey, setMapKey] = useState(1);
+
+  const [searchingCreateLocation, setSearchingCreateLocation] = useState(false);
+  const [searchingEditLocation, setSearchingEditLocation] = useState(false);
+  const [createLocationQuery, setCreateLocationQuery] = useState("");
+  const [editLocationQuery, setEditLocationQuery] = useState("");
 
   const [form, setForm] = useState({
     name: "",
@@ -94,8 +108,10 @@ export default function AdminGeofencesPage() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      fetchLiveLocations(false);
-    }, 5000);
+      if (!document.hidden) {
+        fetchLiveLocations(false);
+      }
+    }, REFRESH_MS);
 
     return () => clearInterval(interval);
   }, []);
@@ -110,7 +126,7 @@ export default function AdminGeofencesPage() {
         return;
       }
 
-      setRows(Array.isArray(data) ? data : []);
+      setRows(normalizeList(data));
     } catch (error) {
       console.error(error);
       alert("Failed to fetch geofences");
@@ -121,7 +137,13 @@ export default function AdminGeofencesPage() {
     try {
       const res = await fetch("/api/parolees", { cache: "no-store" });
       const data = await res.json();
-      setParolees(Array.isArray(data) ? data : []);
+
+      if (!res.ok) {
+        alert(data.error || "Failed to fetch parolees");
+        return;
+      }
+
+      setParolees(normalizeList(data));
     } catch (error) {
       console.error(error);
       alert("Failed to fetch parolees");
@@ -169,6 +191,93 @@ export default function AdminGeofencesPage() {
     }
   }
 
+  function updateMapPosition(lat, lng, zoom = 16) {
+    setMapCenter([lat, lng]);
+    setMapZoom(zoom);
+    setMapKey((v) => v + 1);
+  }
+
+  function applyCoordinates(mode, lat, lng) {
+    const safeLat = Number(lat).toFixed(6);
+    const safeLng = Number(lng).toFixed(6);
+
+    if (mode === "create") {
+      setForm((prev) => ({
+        ...prev,
+        centerLat: safeLat,
+        centerLng: safeLng,
+      }));
+    } else {
+      setEditForm((prev) => ({
+        ...prev,
+        centerLat: safeLat,
+        centerLng: safeLng,
+      }));
+    }
+
+    updateMapPosition(Number(lat), Number(lng));
+  }
+
+  async function searchLocation(query, mode) {
+    const trimmed = query.trim();
+
+    if (!trimmed) {
+      alert("Please enter a location to search");
+      return;
+    }
+
+    try {
+      if (mode === "create") {
+        setSearchingCreateLocation(true);
+      } else {
+        setSearchingEditLocation(true);
+      }
+
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(
+          trimmed
+        )}`
+      );
+
+      const data = await res.json();
+
+      if (!res.ok || !Array.isArray(data) || data.length === 0) {
+        alert("Location not found");
+        return;
+      }
+
+      const first = data[0];
+      applyCoordinates(mode, Number(first.lat), Number(first.lon));
+    } catch (error) {
+      console.error(error);
+      alert("Failed to search location");
+    } finally {
+      if (mode === "create") {
+        setSearchingCreateLocation(false);
+      } else {
+        setSearchingEditLocation(false);
+      }
+    }
+  }
+
+  function useLiveLocation(mode) {
+    const paroleeId = mode === "create" ? form.paroleeId : editForm.paroleeId;
+
+    if (!paroleeId) {
+      alert("Please select a parolee first");
+      return;
+    }
+
+    const live = liveLocations.find((item) => item.paroleeId === paroleeId);
+
+    if (!live) {
+      alert("No live location found for the selected parolee");
+      return;
+    }
+
+    applyCoordinates(mode, Number(live.lat), Number(live.lng));
+  }
+
   function handleChange(e) {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -211,6 +320,7 @@ export default function AdminGeofencesPage() {
         centerLat: "7.9064",
         centerLng: "125.0942",
       });
+      setCreateLocationQuery("");
 
       setOpenCreate(false);
       await fetchGeofences();
@@ -241,6 +351,7 @@ export default function AdminGeofencesPage() {
       centerLng: String(geofence.centerLng || 125.0942),
       status: geofence.status || "ACTIVE",
     });
+    setEditLocationQuery(geofence.name || "");
     setOpenEdit(true);
   }
 
@@ -723,6 +834,36 @@ export default function AdminGeofencesPage() {
               </select>
             </div>
 
+            <div className="sm:col-span-2 rounded-2xl border border-sky-400/20 bg-sky-500/10 p-4">
+              <div className="text-sm font-semibold text-white">Search Center Location</div>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto]">
+                <input
+                  value={createLocationQuery}
+                  onChange={(e) => setCreateLocationQuery(e.target.value)}
+                  className={inputClass}
+                  placeholder="Search place or address"
+                />
+                <button
+                  type="button"
+                  onClick={() => searchLocation(createLocationQuery, "create")}
+                  className={btnSecondary}
+                  disabled={searchingCreateLocation}
+                >
+                  {searchingCreateLocation ? "Searching..." : "Search Place"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => useLiveLocation("create")}
+                  className={btnGhost}
+                >
+                  Use Live Location
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-slate-300/80">
+                Search a place to auto-fill Center Latitude and Center Longitude.
+              </p>
+            </div>
+
             <div>
               <div className="text-xs text-slate-400">Type</div>
               <select
@@ -823,6 +964,36 @@ export default function AdminGeofencesPage() {
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="sm:col-span-2 rounded-2xl border border-sky-400/20 bg-sky-500/10 p-4">
+              <div className="text-sm font-semibold text-white">Search Center Location</div>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto]">
+                <input
+                  value={editLocationQuery}
+                  onChange={(e) => setEditLocationQuery(e.target.value)}
+                  className={inputClass}
+                  placeholder="Search place or address"
+                />
+                <button
+                  type="button"
+                  onClick={() => searchLocation(editLocationQuery, "edit")}
+                  className={btnSecondary}
+                  disabled={searchingEditLocation}
+                >
+                  {searchingEditLocation ? "Searching..." : "Search Place"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => useLiveLocation("edit")}
+                  className={btnGhost}
+                >
+                  Use Live Location
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-slate-300/80">
+                Search a place to auto-fill Center Latitude and Center Longitude.
+              </p>
             </div>
 
             <div>

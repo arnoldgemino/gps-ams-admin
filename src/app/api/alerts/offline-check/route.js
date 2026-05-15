@@ -1,5 +1,14 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+
+function jsonNoCache(data, init = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set("Cache-Control", "no-store, max-age=0");
+  return NextResponse.json(data, { ...init, headers });
+}
 
 async function ensureOpenAlert(tx, { paroleeId, officerId, type, details }) {
   const existing = await tx.alert.findFirst({
@@ -9,6 +18,9 @@ async function ensureOpenAlert(tx, { paroleeId, officerId, type, details }) {
       status: "OPEN",
     },
     orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+    },
   });
 
   if (existing) return existing;
@@ -20,6 +32,9 @@ async function ensureOpenAlert(tx, { paroleeId, officerId, type, details }) {
       type,
       details,
       status: "OPEN",
+    },
+    select: {
+      id: true,
     },
   });
 }
@@ -42,44 +57,77 @@ async function resolveOfflineAlerts(tx, paroleeId) {
 
 export async function POST() {
   try {
-    const settings = await prisma.systemSettings.findFirst();
-    const telemetryIntervalSec = settings?.telemetryIntervalSec ?? 10;
+    const settings = await prisma.systemSettings.findFirst({
+      select: {
+        telemetryIntervalSec: true,
+      },
+    });
 
-    // 6 missed intervals or minimum 60 sec
+    const telemetryIntervalSec = settings?.telemetryIntervalSec ?? 10;
     const offlineThresholdSec = Math.max(telemetryIntervalSec * 6, 60);
     const cutoff = new Date(Date.now() - offlineThresholdSec * 1000);
 
-    const [activeDeviceAssignments, activeOfficerAssignments, telemetryRows] =
-      await Promise.all([
-        prisma.deviceAssignment.findMany({
-          where: { status: "ACTIVE" },
-          include: {
-            parolee: true,
-            device: true,
+    const activeDeviceAssignments = await prisma.deviceAssignment.findMany({
+      where: {
+        status: "ACTIVE",
+      },
+      select: {
+        paroleeId: true,
+        device: {
+          select: {
+            deviceCode: true,
           },
-        }),
-        prisma.officerParoleeAssignment.findMany({
-          where: { status: "ACTIVE" },
-          orderBy: { startAt: "desc" },
-        }),
-        prisma.telemetry.findMany({
-          orderBy: { createdAt: "desc" },
-          take: 1000,
-        }),
-      ]);
+        },
+      },
+    });
+
+    if (!activeDeviceAssignments.length) {
+      return jsonNoCache({ ok: true, processed: 0 }, { status: 200 });
+    }
+
+    const paroleeIds = [
+      ...new Set(activeDeviceAssignments.map((a) => a.paroleeId).filter(Boolean)),
+    ];
+
+    const activeOfficerAssignments = await prisma.officerParoleeAssignment.findMany({
+      where: {
+        status: "ACTIVE",
+        paroleeId: { in: paroleeIds },
+      },
+      orderBy: [
+        { paroleeId: "asc" },
+        { startAt: "desc" },
+      ],
+      distinct: ["paroleeId"],
+      select: {
+        paroleeId: true,
+        officerId: true,
+      },
+    });
+
+    const telemetryRows = await prisma.telemetry.findMany({
+      where: {
+        paroleeId: { in: paroleeIds },
+      },
+      orderBy: [
+        { paroleeId: "asc" },
+        { createdAt: "desc" },
+      ],
+      distinct: ["paroleeId"],
+      select: {
+        paroleeId: true,
+        createdAt: true,
+      },
+    });
 
     const latestTelemetryMap = new Map();
     for (const row of telemetryRows) {
-      if (!latestTelemetryMap.has(row.paroleeId)) {
-        latestTelemetryMap.set(row.paroleeId, row);
-      }
+      latestTelemetryMap.set(row.paroleeId, row);
     }
 
     const officerMap = new Map();
     for (const row of activeOfficerAssignments) {
-      if (!officerMap.has(row.paroleeId)) {
-        officerMap.set(row.paroleeId, row.officerId);
-      }
+      officerMap.set(row.paroleeId, row.officerId);
     }
 
     await prisma.$transaction(async (tx) => {
@@ -104,10 +152,17 @@ export async function POST() {
       }
     });
 
-    return NextResponse.json({ ok: true });
+    return jsonNoCache(
+      {
+        ok: true,
+        processed: activeDeviceAssignments.length,
+      },
+      { status: 200 }
+    );
   } catch (error) {
     console.error("POST /api/alerts/offline-check error:", error);
-    return NextResponse.json(
+
+    return jsonNoCache(
       { error: "Failed to run offline check" },
       { status: 500 }
     );

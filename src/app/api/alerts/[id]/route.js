@@ -1,5 +1,14 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+
+function jsonNoCache(data, init = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set("Cache-Control", "no-store, max-age=0");
+  return NextResponse.json(data, { ...init, headers });
+}
 
 function getSeverity(type) {
   if (type === "TAMPER") return "CRITICAL";
@@ -11,47 +20,88 @@ function getSeverity(type) {
 
 export async function GET(req, { params }) {
   try {
-    const { id } = await params;
+    const { id } = params;
+
+    if (!id) {
+      return jsonNoCache({ error: "Alert ID is required" }, { status: 400 });
+    }
 
     const alert = await prisma.alert.findUnique({
       where: { id },
+      select: {
+        id: true,
+        paroleeId: true,
+        officerId: true,
+        type: true,
+        details: true,
+        status: true,
+        createdAt: true,
+      },
     });
 
     if (!alert) {
-      return NextResponse.json({ error: "Alert not found" }, { status: 404 });
+      return jsonNoCache({ error: "Alert not found" }, { status: 404 });
     }
 
-    const [parolee, officer, latestTelemetry] = await Promise.all([
-      alert.paroleeId
-        ? prisma.parolee.findUnique({ where: { id: alert.paroleeId } })
-        : null,
-      alert.officerId
-        ? prisma.officer.findUnique({ where: { id: alert.officerId } })
-        : null,
-      alert.paroleeId
-        ? prisma.telemetry.findFirst({
-            where: { paroleeId: alert.paroleeId },
-            orderBy: { createdAt: "desc" },
-          })
-        : null,
-    ]);
+    const parolee = alert.paroleeId
+      ? await prisma.parolee.findUnique({
+          where: { id: alert.paroleeId },
+          select: {
+            paroleeNo: true,
+            fullName: true,
+          },
+        })
+      : null;
 
-    return NextResponse.json({
-      id: alert.id,
-      paroleeId: alert.paroleeId || "",
-      paroleeLabel: parolee
-        ? `${parolee.paroleeNo} - ${parolee.fullName}`
-        : alert.paroleeId || "—",
-      type: alert.type,
-      severity: getSeverity(alert.type),
-      status: alert.status,
-      details: alert.details || "",
-      time: alert.createdAt ? new Date(alert.createdAt).toLocaleString() : "—",
-      location: latestTelemetry ? `${latestTelemetry.lat}, ${latestTelemetry.lng}` : "Unknown",
-      officerLabel: officer ? `${officer.badgeId} - ${officer.fullName}` : "—",
-    });
+    const officer = alert.officerId
+      ? await prisma.officer.findUnique({
+          where: { id: alert.officerId },
+          select: {
+            badgeId: true,
+            fullName: true,
+          },
+        })
+      : null;
+
+    const latestTelemetry = alert.paroleeId
+      ? await prisma.telemetry.findFirst({
+          where: { paroleeId: alert.paroleeId },
+          orderBy: { createdAt: "desc" },
+          select: {
+            lat: true,
+            lng: true,
+            createdAt: true,
+          },
+        })
+      : null;
+
+    return jsonNoCache(
+      {
+        id: alert.id,
+        paroleeId: alert.paroleeId || "",
+        paroleeLabel: parolee
+          ? `${parolee.paroleeNo} - ${parolee.fullName}`
+          : alert.paroleeId || "—",
+        type: alert.type,
+        severity: getSeverity(alert.type),
+        status: alert.status,
+        details: alert.details || "",
+        time: alert.createdAt ? new Date(alert.createdAt).toLocaleString() : "—",
+        location: latestTelemetry
+          ? `${latestTelemetry.lat}, ${latestTelemetry.lng}`
+          : "Unknown",
+        officerLabel: officer
+          ? `${officer.badgeId} - ${officer.fullName}`
+          : "—",
+      },
+      { status: 200 }
+    );
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Failed to fetch alert detail" }, { status: 500 });
+    console.error("GET /api/alerts/[id] error:", error);
+
+    return jsonNoCache(
+      { error: "Failed to fetch alert detail" },
+      { status: 500 }
+    );
   }
 }

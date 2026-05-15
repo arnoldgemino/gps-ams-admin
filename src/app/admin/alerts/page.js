@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+
+const REFRESH_MS = 20000;
 
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
@@ -25,6 +27,13 @@ const inputClass =
 const selectClass =
   "mt-1 h-10 w-full rounded-xl border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none focus:ring-2 focus:ring-sky-300/30";
 
+function normalizeList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
 export default function AdminAlertsPage() {
   const router = useRouter();
 
@@ -41,57 +50,107 @@ export default function AdminAlertsPage() {
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [selectedAlertDetail, setSelectedAlertDetail] = useState(null);
 
+  const aliveRef = useRef(true);
+  const fetchInFlightRef = useRef(false);
+  const offlineCheckCounterRef = useRef(0);
+
   useEffect(() => {
-    fetchAlerts();
+    aliveRef.current = true;
+    fetchAlerts(true);
+
+    return () => {
+      aliveRef.current = false;
+    };
   }, []);
 
   useEffect(() => {
     if (!liveFeed) return;
 
     const interval = setInterval(() => {
-      fetchAlerts(false);
-    }, 5000);
+      if (!document.hidden) {
+        fetchAlerts(false);
+      }
+    }, REFRESH_MS);
 
     return () => clearInterval(interval);
   }, [liveFeed]);
 
-  async function fetchAlerts(showLoader = true) {
-  try {
-    if (showLoader) setLoading(true);
-
-    await fetch("/api/alerts/offline-check", { method: "POST" });
-
-    const res = await fetch("/api/alerts", { cache: "no-store" });
-    const data = await res.json();
-
-    if (!res.ok) {
-      alert(data.error || "Failed to fetch alerts");
-      return;
-    }
-
-    setRows(Array.isArray(data) ? data : []);
-  } catch (error) {
-    console.error(error);
-    alert("Failed to fetch alerts");
-  } finally {
-    if (showLoader) setLoading(false);
-  }
-}
-
-  async function fetchAlertDetail(alertId) {
+  async function runOfflineCheck() {
     try {
-      const res = await fetch(`/api/alerts/${alertId}`, { cache: "no-store" });
-      const data = await res.json();
+      await fetch("/api/alerts/offline-check", {
+        method: "POST",
+        cache: "no-store",
+      });
+    } catch (error) {
+      console.error("offline-check failed:", error);
+    }
+  }
+
+  async function fetchAlerts(showLoader = true) {
+    if (fetchInFlightRef.current) return;
+
+    try {
+      fetchInFlightRef.current = true;
+      if (showLoader) setLoading(true);
+
+      offlineCheckCounterRef.current += 1;
+
+      if (showLoader || offlineCheckCounterRef.current % 3 === 0) {
+        await runOfflineCheck();
+      }
+
+      const res = await fetch("/api/alerts", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        alert(data.error || "Failed to fetch alert detail");
+        if (showLoader) {
+          alert(data.error || "Failed to fetch alerts");
+        }
         return;
       }
 
+      if (!aliveRef.current) return;
+
+      setRows(normalizeList(data));
+
+      if (selectedAlert?.id) {
+        const updated = normalizeList(data).find((item) => item.id === selectedAlert.id);
+        if (updated) {
+          setSelectedAlert(updated);
+        }
+      }
+    } catch (error) {
+      console.error(error);
+      if (showLoader) {
+        alert("Failed to fetch alerts");
+      }
+    } finally {
+      fetchInFlightRef.current = false;
+      if (showLoader && aliveRef.current) {
+        setLoading(false);
+      }
+    }
+  }
+
+  async function fetchAlertDetail(alertId, showAlertOnError = true) {
+    try {
+      const res = await fetch(`/api/alerts/${alertId}`, { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        if (showAlertOnError) {
+          alert(data.error || "Failed to fetch alert detail");
+        }
+        return;
+      }
+
+      if (!aliveRef.current) return;
       setSelectedAlertDetail(data);
     } catch (error) {
       console.error(error);
-      alert("Failed to fetch alert detail");
+      if (showAlertOnError) {
+        alert("Failed to fetch alert detail");
+      }
     }
   }
 
@@ -110,7 +169,7 @@ export default function AdminAlertsPage() {
         method: "POST",
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         alert(data.error || "Failed to acknowledge alert");
@@ -118,7 +177,7 @@ export default function AdminAlertsPage() {
       }
 
       if (selectedAlert?.id === alertId) {
-        await fetchAlertDetail(alertId);
+        await fetchAlertDetail(alertId, false);
       }
 
       await fetchAlerts(false);
@@ -132,9 +191,7 @@ export default function AdminAlertsPage() {
   }
 
   async function handleBulkAcknowledge() {
-    const openIds = filtered
-      .filter((r) => r.status === "OPEN")
-      .map((r) => r.id);
+    const openIds = filtered.filter((r) => r.status === "OPEN").map((r) => r.id);
 
     if (openIds.length === 0) {
       alert("No open alerts to acknowledge");
@@ -152,7 +209,7 @@ export default function AdminAlertsPage() {
         body: JSON.stringify({ ids: openIds }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         alert(data.error || "Failed to acknowledge alerts");
@@ -211,11 +268,12 @@ export default function AdminAlertsPage() {
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       const s = search.trim().toLowerCase();
+
       const matchSearch =
         !s ||
-        r.id.toLowerCase().includes(s) ||
-        (r.paroleeNo || "").toLowerCase().includes(s) ||
-        (r.paroleeLabel || "").toLowerCase().includes(s);
+        String(r.id || "").toLowerCase().includes(s) ||
+        String(r.paroleeNo || "").toLowerCase().includes(s) ||
+        String(r.paroleeLabel || "").toLowerCase().includes(s);
 
       const matchType = filterType === "ALL" ? true : r.type === filterType;
       const matchStatus = filterStatus === "ALL" ? true : r.status === filterStatus;
@@ -340,6 +398,9 @@ export default function AdminAlertsPage() {
                 </div>
 
                 <div className="flex gap-2">
+                  <button className={btnGhost} onClick={() => fetchAlerts(true)}>
+                    Refresh
+                  </button>
                   <button className={btnGhost} onClick={handleExport}>
                     Export
                   </button>
