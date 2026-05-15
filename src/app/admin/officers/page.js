@@ -354,7 +354,7 @@ export default function AdminOfficersPage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-950 text-white">
-      <div className="absolute inset-0 bg-[url('/images/login-bg.jpg')] bg-cover bg-center opacity-20" />
+      <div className="absolute inset-0 bg-[url('/bg.png')] bg-cover bg-center opacity-20" />
       <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(2,6,23,0.95),rgba(10,24,52,0.88),rgba(3,7,18,0.96))]" />
       <div className="absolute inset-0 backdrop-blur-[2px]" />
 
