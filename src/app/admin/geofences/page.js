@@ -117,21 +117,22 @@ export default function AdminGeofencesPage() {
   }, []);
 
   async function fetchGeofences() {
-    try {
-      const res = await fetch("/api/geofences", { cache: "no-store" });
-      const data = await res.json().catch(() => ({}));
+  try {
+    const res = await fetch("/api/geofences", { cache: "no-store" });
+    const data = await res.json().catch(() => ({}));
 
-      if (!res.ok) {
-        alert(data.error || "Failed to fetch geofences");
-        return;
-      }
-
-      setRows(normalizeList(data));
-    } catch (error) {
-      console.error(error);
-      alert("Failed to fetch geofences");
+    if (!res.ok) {
+      console.error("GET /api/geofences failed:", data);
+      alert(data.details || data.error || "Failed to fetch geofences");
+      return;
     }
+
+    setRows(normalizeList(data));
+  } catch (error) {
+    console.error("fetchGeofences network/client error:", error);
+    alert(error.message || "Failed to fetch geofences");
   }
+}
 
   async function fetchParolees(showAlert = false) {
     try {
@@ -559,10 +560,11 @@ export default function AdminGeofencesPage() {
               <Link href="/admin/dashboard" className={btnGhost}>
                 ← Dashboard
               </Link>
-             <button
-  onClick={async () => {
-    await ensureParoleesLoaded(true);
+<button
+  type="button"
+  onClick={() => {
     setOpenCreate(true);
+    fetchParolees(true);
   }}
   className={btnPrimary}
 >
