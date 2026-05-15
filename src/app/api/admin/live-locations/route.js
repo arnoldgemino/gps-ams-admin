@@ -44,7 +44,6 @@ export async function GET() {
           },
         },
       },
-      take: 100,
     });
 
     if (!telemetryRows.length) {
@@ -81,7 +80,7 @@ export async function GET() {
       name: row.parolee?.fullName || row.paroleeId,
       lat: row.lat,
       lng: row.lng,
-      lastSeen: new Date(row.createdAt).toLocaleString(),
+      lastSeen: row.createdAt ? new Date(row.createdAt).toLocaleString() : "—",
       status: alertSet.has(row.paroleeId) ? "ALERT" : "COMPLIANT",
     }));
 
