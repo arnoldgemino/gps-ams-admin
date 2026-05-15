@@ -67,6 +67,30 @@ async function resolveAlertsByType(tx, { paroleeId, type }) {
   });
 }
 
+export async function GET(req) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const paroleeId = searchParams.get("paroleeId");
+
+    if (!paroleeId) {
+      return NextResponse.json(
+        { error: "paroleeId is required" },
+        { status: 400 }
+      );
+    }
+
+    const latest = await prisma.telemetry.findFirst({
+      where: { paroleeId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return NextResponse.json(latest || null);
+  } catch (error) {
+    console.error("Telemetry GET error:", error);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
+}
+
 export async function POST(req) {
   try {
     const token = req.headers.get("x-device-token") || "";
@@ -77,7 +101,7 @@ export async function POST(req) {
     let body;
     try {
       body = JSON.parse(raw);
-    } catch (e) {
+    } catch {
       return NextResponse.json(
         {
           error: "Invalid JSON",
@@ -87,8 +111,9 @@ export async function POST(req) {
       );
     }
 
-    const deviceId = String(body.deviceId || "");
-    const paroleeId = String(body.paroleeId || "");
+    const deviceCode = String(body.deviceCode || "").trim();
+    const serialNumber = String(body.serialNumber || "").trim();
+
     const lat = Number(body.lat);
     const lng = Number(body.lng);
     const batteryLevel = Number(body.batteryLevel);
@@ -101,8 +126,7 @@ export async function POST(req) {
     const tamperStatus = String(body.tamperStatus || "OK");
 
     if (
-      !deviceId ||
-      !paroleeId ||
+      (!deviceCode && !serialNumber) ||
       !Number.isFinite(lat) ||
       !Number.isFinite(lng) ||
       !Number.isFinite(batteryLevel)
@@ -116,11 +140,65 @@ export async function POST(req) {
       );
     }
 
-    const [device, parolee, settings, officerAssignment, geofences] =
+    const device = await prisma.device.findFirst({
+      where: {
+        OR: [
+          deviceCode ? { deviceCode } : undefined,
+          serialNumber ? { serialNumber } : undefined,
+        ].filter(Boolean),
+      },
+    });
+
+    if (!device) {
+      return NextResponse.json(
+        {
+          error: "Device not found",
+          deviceCode,
+          serialNumber,
+        },
+        { status: 404 }
+      );
+    }
+
+    const envToken = process.env.ESP32_DEVICE_TOKEN || "";
+    const tokenValid = token === envToken || token === device.apiKey;
+
+    if (!tokenValid) {
+      return NextResponse.json(
+        {
+          error: "Unauthorized",
+        },
+        { status: 401 }
+      );
+    }
+
+    const activeAssignment = await prisma.deviceParoleeAssignment.findFirst({
+      where: {
+        deviceId: device.id,
+        status: "ACTIVE",
+      },
+      orderBy: {
+        startAt: "desc",
+      },
+    });
+
+    if (!activeAssignment) {
+      return NextResponse.json(
+        {
+          error: "Device is not assigned to a parolee",
+          deviceId: device.id,
+          deviceCode: device.deviceCode,
+          serialNumber: device.serialNumber,
+        },
+        { status: 400 }
+      );
+    }
+
+    const deviceId = device.id;
+    const paroleeId = activeAssignment.paroleeId;
+
+    const [parolee, settings, officerAssignment, geofences] =
       await Promise.all([
-        prisma.device.findUnique({
-          where: { id: deviceId },
-        }),
         prisma.parolee.findUnique({
           where: { id: paroleeId },
         }),
@@ -141,16 +219,6 @@ export async function POST(req) {
         }),
       ]);
 
-    if (!device) {
-      return NextResponse.json(
-        {
-          error: "Device not found",
-          deviceId,
-        },
-        { status: 404 }
-      );
-    }
-
     if (!parolee) {
       return NextResponse.json(
         {
@@ -158,18 +226,6 @@ export async function POST(req) {
           paroleeId,
         },
         { status: 404 }
-      );
-    }
-
-    const envToken = process.env.ESP32_DEVICE_TOKEN || "";
-    const tokenValid = token === envToken || token === device.apiKey;
-
-    if (!tokenValid) {
-      return NextResponse.json(
-        {
-          error: "Unauthorized",
-        },
-        { status: 401 }
       );
     }
 

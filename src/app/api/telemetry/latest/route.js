@@ -14,13 +14,38 @@ export async function GET(req) {
     }
 
     const latest = await prisma.telemetry.findFirst({
-      where: { paroleeId },
-      orderBy: { createdAt: "desc" },
+      where: {
+        paroleeId,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      include: {
+        device: {
+          select: {
+            id: true,
+            deviceCode: true,
+            serialNumber: true,
+            status: true,
+          },
+        },
+        parolee: {
+          select: {
+            id: true,
+            paroleeNo: true,
+            fullName: true,
+          },
+        },
+      },
     });
 
     return NextResponse.json(latest || null);
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
+    console.error("Latest telemetry GET error:", error);
+
+    return NextResponse.json(
+      { error: "Server error", message: error.message },
+      { status: 500 }
+    );
   }
 }
