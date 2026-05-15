@@ -50,6 +50,8 @@ export default function AdminParoleesPage() {
   const [saving, setSaving] = useState(false);
   const [loadingView, setLoadingView] = useState(false);
   const [loadingPage, setLoadingPage] = useState(true);
+  const [loadingAssignOptions, setLoadingAssignOptions] = useState(false);
+  const [pageError, setPageError] = useState("");
 
   const [selectedParolee, setSelectedParolee] = useState(null);
   const [selectedParoleeDetail, setSelectedParoleeDetail] = useState(null);
@@ -78,20 +80,24 @@ export default function AdminParoleesPage() {
   async function loadPage() {
     try {
       setLoadingPage(true);
-      await Promise.all([fetchParolees(), fetchOfficers(), fetchDevices()]);
+      setPageError("");
+      await fetchParolees(true);
     } finally {
       setLoadingPage(false);
     }
   }
 
-  async function fetchParolees() {
+  async function fetchParolees(showPageError = false) {
     try {
       const res = await fetch("/api/parolees", { cache: "no-store" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         console.error("Failed to fetch parolees", data);
         setRows([]);
+        if (showPageError) {
+          setPageError(data.error || "Failed to fetch parolees");
+        }
         return;
       }
 
@@ -110,16 +116,20 @@ export default function AdminParoleesPage() {
       }));
 
       setRows(list);
+      setPageError("");
     } catch (error) {
       console.error("Failed to fetch parolees", error);
       setRows([]);
+      if (showPageError) {
+        setPageError("Failed to fetch parolees");
+      }
     }
   }
 
   async function fetchOfficers() {
     try {
       const res = await fetch("/api/officers", { cache: "no-store" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         console.error("Failed to fetch officers", data);
@@ -143,7 +153,7 @@ export default function AdminParoleesPage() {
   async function fetchDevices() {
     try {
       const res = await fetch("/api/devices", { cache: "no-store" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         console.error("Failed to fetch devices", data);
@@ -164,11 +174,27 @@ export default function AdminParoleesPage() {
     }
   }
 
+  async function ensureAssignOptionsLoaded() {
+    try {
+      setLoadingAssignOptions(true);
+
+      if (officers.length === 0) {
+        await fetchOfficers();
+      }
+
+      if (devices.length === 0) {
+        await fetchDevices();
+      }
+    } finally {
+      setLoadingAssignOptions(false);
+    }
+  }
+
   async function fetchParoleeDetail(paroleeId) {
     try {
       setLoadingView(true);
       const res = await fetch(`/api/parolees/${paroleeId}`, { cache: "no-store" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         alert(data.error || "Failed to load parolee details");
@@ -219,7 +245,7 @@ export default function AdminParoleesPage() {
         body: JSON.stringify(payload),
       });
 
-      const result = await res.json();
+      const result = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         alert(result.error || result.message || "Failed to create parolee");
@@ -260,13 +286,14 @@ export default function AdminParoleesPage() {
     setOpenEdit(true);
   }
 
-  function handleOpenAssign(parolee) {
+  async function handleOpenAssign(parolee) {
     setSelectedParolee(parolee);
     setAssignForm({
       officerId: parolee.officerId || "",
       deviceId: parolee.deviceId || "",
     });
     setOpenAssign(true);
+    await ensureAssignOptionsLoaded();
   }
 
   async function handleUpdateParolee() {
@@ -289,7 +316,7 @@ export default function AdminParoleesPage() {
         body: JSON.stringify(payload),
       });
 
-      const result = await res.json();
+      const result = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         alert(result.error || result.message || "Failed to update parolee");
@@ -326,7 +353,7 @@ export default function AdminParoleesPage() {
         body: JSON.stringify(payload),
       });
 
-      const result = await res.json();
+      const result = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         alert(result.error || result.message || "Failed to save assignments");
@@ -354,11 +381,8 @@ export default function AdminParoleesPage() {
       const paroleeNo = String(r.paroleeNo || "").toLowerCase();
       const fullName = String(r.fullName || "").toLowerCase();
 
-      const matchSearch =
-        !s || paroleeNo.includes(s) || fullName.includes(s);
-
-      const matchStatus =
-        filterStatus === "ALL" ? true : r.status === filterStatus;
+      const matchSearch = !s || paroleeNo.includes(s) || fullName.includes(s);
+      const matchStatus = filterStatus === "ALL" ? true : r.status === filterStatus;
 
       return matchSearch && matchStatus;
     });
@@ -468,11 +492,17 @@ export default function AdminParoleesPage() {
                 </div>
 
                 <div className="flex gap-2">
-                  <button className={btnGhost} onClick={fetchParolees}>
+                  <button className={btnGhost} onClick={() => loadPage()}>
                     Refresh
                   </button>
                 </div>
               </div>
+
+              {pageError && (
+                <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                  {pageError}
+                </div>
+              )}
 
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-12">
                 <div className="md:col-span-5">
@@ -807,43 +837,49 @@ export default function AdminParoleesPage() {
               }
             />
 
-            <div>
-              <div className="text-xs text-slate-400">Officer</div>
-              <select
-                name="officerId"
-                value={assignForm.officerId}
-                onChange={handleAssignChange}
-                className={selectClass}
-              >
-                <option value="" className="bg-slate-900 text-white">
-                  No officer
-                </option>
-                {officers.map((o) => (
-                  <option key={o.id} value={o.id} className="bg-slate-900 text-white">
-                    {o.badgeId} - {o.fullName}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {loadingAssignOptions ? (
+              <div className="text-sm text-slate-300">Loading officers and devices...</div>
+            ) : (
+              <>
+                <div>
+                  <div className="text-xs text-slate-400">Officer</div>
+                  <select
+                    name="officerId"
+                    value={assignForm.officerId}
+                    onChange={handleAssignChange}
+                    className={selectClass}
+                  >
+                    <option value="" className="bg-slate-900 text-white">
+                      No officer
+                    </option>
+                    {officers.map((o) => (
+                      <option key={o.id} value={o.id} className="bg-slate-900 text-white">
+                        {o.badgeId} - {o.fullName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            <div>
-              <div className="text-xs text-slate-400">Device</div>
-              <select
-                name="deviceId"
-                value={assignForm.deviceId}
-                onChange={handleAssignChange}
-                className={selectClass}
-              >
-                <option value="" className="bg-slate-900 text-white">
-                  No device
-                </option>
-                {devices.map((d) => (
-                  <option key={d.id} value={d.id} className="bg-slate-900 text-white">
-                    {d.deviceCode} - {d.serialNumber}
-                  </option>
-                ))}
-              </select>
-            </div>
+                <div>
+                  <div className="text-xs text-slate-400">Device</div>
+                  <select
+                    name="deviceId"
+                    value={assignForm.deviceId}
+                    onChange={handleAssignChange}
+                    className={selectClass}
+                  >
+                    <option value="" className="bg-slate-900 text-white">
+                      No device
+                    </option>
+                    {devices.map((d) => (
+                      <option key={d.id} value={d.id} className="bg-slate-900 text-white">
+                        {d.deviceCode} - {d.serialNumber}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
 
             <p className="text-xs text-slate-400">
               Pwede mong iwanang blank ang officer o device para alisin ang current assignment.
@@ -854,7 +890,11 @@ export default function AdminParoleesPage() {
             <button onClick={() => setOpenAssign(false)} className={btnGhost}>
               Cancel
             </button>
-            <button onClick={handleAssignParolee} className={btnPrimary} disabled={saving}>
+            <button
+              onClick={handleAssignParolee}
+              className={btnPrimary}
+              disabled={saving || loadingAssignOptions}
+            >
               {saving ? "Saving..." : "Save Assignments"}
             </button>
           </div>
@@ -953,4 +993,4 @@ function Info({ label, value }) {
       </div>
     </div>
   );
-}
+} 

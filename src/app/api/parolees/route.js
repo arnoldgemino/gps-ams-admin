@@ -37,7 +37,6 @@ export async function GET() {
         { paroleeId: "asc" },
         { startAt: "desc" },
       ],
-      distinct: ["paroleeId"],
       select: {
         paroleeId: true,
         officerId: true,
@@ -59,7 +58,6 @@ export async function GET() {
         { paroleeId: "asc" },
         { startAt: "desc" },
       ],
-      distinct: ["paroleeId"],
       select: {
         paroleeId: true,
         deviceId: true,
@@ -79,7 +77,6 @@ export async function GET() {
         { paroleeId: "asc" },
         { createdAt: "desc" },
       ],
-      distinct: ["paroleeId"],
       select: {
         paroleeId: true,
         createdAt: true,
@@ -95,7 +92,6 @@ export async function GET() {
         { paroleeId: "asc" },
         { createdAt: "desc" },
       ],
-      distinct: ["paroleeId"],
       select: {
         paroleeId: true,
       },
@@ -103,22 +99,30 @@ export async function GET() {
 
     const officerMap = new Map();
     for (const a of officerAssignments) {
-      officerMap.set(a.paroleeId, a);
+      if (!officerMap.has(a.paroleeId)) {
+        officerMap.set(a.paroleeId, a);
+      }
     }
 
     const deviceMap = new Map();
     for (const a of deviceAssignments) {
-      deviceMap.set(a.paroleeId, a);
+      if (!deviceMap.has(a.paroleeId)) {
+        deviceMap.set(a.paroleeId, a);
+      }
     }
 
     const telemetryMap = new Map();
     for (const t of telemetryRows) {
-      telemetryMap.set(t.paroleeId, t);
+      if (!telemetryMap.has(t.paroleeId)) {
+        telemetryMap.set(t.paroleeId, t);
+      }
     }
 
     const alertMap = new Map();
     for (const a of alerts) {
-      alertMap.set(a.paroleeId, a);
+      if (!alertMap.has(a.paroleeId)) {
+        alertMap.set(a.paroleeId, a);
+      }
     }
 
     const items = parolees.map((p) => {
@@ -171,6 +175,18 @@ export async function POST(req) {
       return jsonNoCache(
         { error: "paroleeNo and fullName are required" },
         { status: 400 }
+      );
+    }
+
+    const existing = await prisma.parolee.findUnique({
+      where: { paroleeNo },
+      select: { id: true },
+    });
+
+    if (existing) {
+      return jsonNoCache(
+        { error: "Duplicate paroleeNo" },
+        { status: 409 }
       );
     }
 
