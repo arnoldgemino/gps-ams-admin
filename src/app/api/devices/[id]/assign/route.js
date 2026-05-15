@@ -12,7 +12,8 @@ function jsonNoCache(data, init = {}) {
 
 export async function POST(req, { params }) {
   try {
-    const { id: deviceId } = params;
+    const { id: deviceId } = await params;
+
     const body = await req.json();
     const paroleeId = String(body.paroleeId || "").trim();
 
@@ -81,7 +82,10 @@ export async function POST(req, { params }) {
     console.error("POST /api/devices/[id]/assign error:", error);
 
     return jsonNoCache(
-      { error: "Failed to assign device" },
+      {
+        error: "Failed to assign device",
+        message: error.message,
+      },
       { status: 500 }
     );
   }
