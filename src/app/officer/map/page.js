@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 
@@ -11,11 +12,12 @@ const Marker = dynamic(() => import("react-leaflet").then((m) => m.Marker), { ss
 const Popup = dynamic(() => import("react-leaflet").then((m) => m.Popup), { ssr: false });
 
 export default function OfficerMapPage() {
-  const [officerName, setOfficerName] = useState(() =>
-    typeof window !== "undefined"
-      ? localStorage.getItem("officerName") ?? "Officer"
-      : "Officer"
-  );
+  const router = useRouter();
+  const [officerId, setOfficerId] = useState("");
+  const [officerName, setOfficerName] = useState("Officer");
+  const [points, setPoints] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   function handleLogout() {
     localStorage.removeItem("role");
@@ -23,40 +25,60 @@ export default function OfficerMapPage() {
     localStorage.removeItem("officerName");
     localStorage.removeItem("officerEmail");
     localStorage.removeItem("officerBadgeId");
-    window.location.href = "/officer/login";
+    router.push("/officer/login");
   }
 
   // Valencia City, Bukidnon center
   const center = useMemo(() => ({ lat: 7.9064, lng: 125.0942 }), []);
 
-  // Placeholder assigned parolees live points
-  const points = useMemo(
-    () => [
-      {
-        id: "PAR-101",
-        deviceId: "DEV-001",
-        lat: 7.9064,
-        lng: 125.0942,
-        status: "COMPLIANT",
-        battery: "—",
-        signal: "—",
-        tamper: "—",
-        lastSeen: "—",
-      },
-      {
-        id: "PAR-102",
-        deviceId: "DEV-002",
-        lat: 7.9001,
-        lng: 125.102,
-        status: "WARNING",
-        battery: "—",
-        signal: "—",
-        tamper: "—",
-        lastSeen: "—",
-      },
-    ],
-    []
-  );
+  useEffect(() => {
+    const id = typeof window !== "undefined" ? localStorage.getItem("officerId") : null;
+    const name = typeof window !== "undefined" ? localStorage.getItem("officerName") : null;
+
+    if (!id) {
+      router.push("/officer/login");
+      return;
+    }
+
+    setOfficerId(id);
+    setOfficerName(name || "Officer");
+
+    async function loadLivePoints() {
+      try {
+        setLoading(true);
+        setError("");
+
+        const res = await fetch(`/api/officers/${id}`, { cache: "no-store" });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Unable to load assigned parolees");
+        }
+
+        const pointItems = (data.assignedParolees || []).map((p) => ({
+          id: p.id,
+          label: p.paroleeNo ? `${p.paroleeNo} — ${p.fullName}` : p.fullName,
+          deviceId: p.deviceId || "—",
+          lat: p.lat ?? center.lat,
+          lng: p.lng ?? center.lng,
+          status: p.status || "OFFLINE",
+          battery: p.batteryLevel ?? "—",
+          signal: p.signal ?? "—",
+          tamper: p.tamper || "OK",
+          lastSeen: p.lastSeen ? new Date(p.lastSeen).toLocaleString() : "—",
+        }));
+
+        setPoints(pointItems);
+      } catch (err) {
+        console.error(err);
+        setError(err.message || "Unable to load map data");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadLivePoints();
+  }, [router, center]);
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -125,6 +147,18 @@ export default function OfficerMapPage() {
 
         {/* Main */}
         <main className="col-span-12 md:col-span-9 lg:col-span-10 space-y-6 overflow-y-auto h-[calc(95vh-5rem)] pb-0.5">
+          {loading && (
+            <div className="rounded-2xl border border-white/10 bg-slate-950/80 p-6 text-center text-sm text-slate-300">
+              Loading assigned parolees…
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4 text-sm text-rose-100">
+              {error}
+            </div>
+          )}
+
           {/* Header */}
           <section className="rounded-2xl bg-white p-5 shadow-sm border">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

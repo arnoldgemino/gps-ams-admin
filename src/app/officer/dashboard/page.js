@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 
@@ -37,65 +38,83 @@ const btnDanger =
   "inline-flex items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/15 px-4 py-2 text-sm font-medium text-rose-100 transition hover:bg-rose-500/25 active:scale-[0.99]";
 
 export default function OfficerDashboardPage() {
+  const router = useRouter();
   const center = useMemo(() => ({ lat: 7.9064, lng: 125.0942 }), []);
 
-  const [officerName, setOfficerName] = useState(() =>
-    typeof window !== "undefined"
-      ? localStorage.getItem("officerName") ?? "Officer"
-      : "Officer"
-  );
+  const [officerName, setOfficerName] = useState("Officer");
+  const [officerId, setOfficerId] = useState("");
+  const [assigned, setAssigned] = useState([]);
+  const [alerts, setAlerts] = useState([
+    {
+      id: "AL-001",
+      type: "GEOFENCE",
+      paroleeId: "PAR-102",
+      severity: "HIGH",
+      time: "—",
+      status: "ACTIVE",
+    },
+    {
+      id: "AL-002",
+      type: "LOW_BATTERY",
+      paroleeId: "PAR-101",
+      severity: "MEDIUM",
+      time: "—",
+      status: "ACKNOWLEDGED",
+    },
+  ]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const assigned = useMemo(
-    () => [
-      {
-        id: "PAR-101",
-        name: "—",
-        deviceId: "DEV-001",
-        battery: "—",
-        signal: "—",
-        tamper: "—",
-        lastLat: 7.9064,
-        lastLng: 125.0942,
-        lastSeen: "—",
-        status: "COMPLIANT",
-      },
-      {
-        id: "PAR-102",
-        name: "—",
-        deviceId: "DEV-002",
-        battery: "—",
-        signal: "—",
-        tamper: "—",
-        lastLat: 7.9001,
-        lastLng: 125.102,
-        lastSeen: "—",
-        status: "WARNING",
-      },
-    ],
-    []
-  );
+  useEffect(() => {
+    const id = typeof window !== "undefined" ? localStorage.getItem("officerId") : null;
+    const name = typeof window !== "undefined" ? localStorage.getItem("officerName") : null;
+    if (!id) {
+      router.push("/officer/login");
+      return;
+    }
 
-  const alerts = useMemo(
-    () => [
-      {
-        id: "AL-001",
-        type: "GEOFENCE",
-        paroleeId: "PAR-102",
-        severity: "HIGH",
-        time: "—",
-        status: "ACTIVE",
-      },
-      {
-        id: "AL-002",
-        type: "LOW_BATTERY",
-        paroleeId: "PAR-101",
-        severity: "MEDIUM",
-        time: "—",
-        status: "ACKNOWLEDGED",
-      },
-    ],
-    []
-  );
+    setOfficerId(id);
+    setOfficerName(name || "Officer");
+
+    async function loadOfficer() {
+      try {
+        setLoading(true);
+        const res = await fetch(`/api/officers/${id}`, { cache: "no-store" });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setError(data.error || "Unable to load officer details");
+          return;
+        }
+
+        setOfficerName(data.fullName || name || "Officer");
+        localStorage.setItem("officerName", data.fullName || "Officer");
+        localStorage.setItem("officerEmail", data.email || "");
+        localStorage.setItem("officerBadgeId", data.badgeId || "");
+        setAssigned(
+          (data.assignedParolees || []).map((item, index) => ({
+            id: item.id,
+            name: item.fullName || "—",
+            deviceId: "—",
+            battery: "—",
+            signal: "—",
+            tamper: "—",
+            lastLat: center.lat + (index + 1) * 0.003,
+            lastLng: center.lng + (index + 1) * 0.0025,
+            lastSeen: item.startAt ? new Date(item.startAt).toLocaleString() : "—",
+            status: "ASSIGNED",
+          }))
+        );
+      } catch (err) {
+        console.error(err);
+        setError("Unable to load officer details");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadOfficer();
+  }, [router]);
 
   const stats = useMemo(
     () => [
@@ -153,7 +172,7 @@ export default function OfficerDashboardPage() {
         </header>
 
         <div className="mx-auto grid max-w-7xl grid-cols-12 gap-6 px-4 py-6">
-          <aside className="col-span-12 md:col-span-3 lg:col-span-2">
+          <aside className="hidden md:block col-span-12 md:col-span-3 lg:col-span-2">
             <div className="sticky top-20 flex h-[calc(95vh-5rem)] flex-col overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.06] shadow-[0_10px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl">
               <nav className="flex-1 space-y-2 overflow-y-auto p-4">
                 <SideLink active label="Dashboard" href="/officer/dashboard" />
@@ -381,6 +400,14 @@ export default function OfficerDashboardPage() {
             </section>
           </main>
         </div>
+        <nav className="fixed bottom-0 left-0 right-0 z-40 block border-t border-white/10 bg-slate-950/95 p-2 backdrop-blur-xl md:hidden">
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-4">
+            <BottomNavLink href="/officer/dashboard" label="Dashboard" active />
+            <BottomNavLink href="/officer/parolees" label="Parolees" />
+            <BottomNavLink href="/officer/alerts" label="Alerts" />
+            <BottomNavLink href="/officer/profile" label="Profile" />
+          </div>
+        </nav>
       </div>
     </div>
   );
@@ -394,6 +421,22 @@ function SideLink({ href, label, active = false }) {
         "block rounded-xl px-3 py-2.5 text-sm transition",
         active
           ? "bg-white font-semibold text-slate-950 shadow-lg shadow-white/10"
+          : "text-slate-200 hover:bg-white/10 hover:text-white",
+      ].join(" ")}
+    >
+      {label}
+    </Link>
+  );
+}
+
+function BottomNavLink({ href, label, active = false }) {
+  return (
+    <Link
+      href={href}
+      className={[
+        "flex-1 rounded-2xl px-3 py-2 text-center text-xs font-semibold transition",
+        active
+          ? "bg-white text-slate-950"
           : "text-slate-200 hover:bg-white/10 hover:text-white",
       ].join(" ")}
     >

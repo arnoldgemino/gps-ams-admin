@@ -77,12 +77,58 @@ export async function GET(req, { params }) {
 
     const paroleeMap = new Map(parolees.map((p) => [p.id, p]));
 
-    const assignedParolees = assignments.map((a) => ({
-      id: a.paroleeId,
-      paroleeNo: paroleeMap.get(a.paroleeId)?.paroleeNo || "—",
-      fullName: paroleeMap.get(a.paroleeId)?.fullName || "—",
-      startAt: a.startAt,
-    }));
+    const telemetryRows = paroleeIds.length
+      ? await prisma.telemetry.findMany({
+          where: {
+            paroleeId: { in: paroleeIds },
+          },
+          orderBy: [
+            { paroleeId: "asc" },
+            { createdAt: "desc" },
+          ],
+          distinct: ["paroleeId"],
+          select: {
+            paroleeId: true,
+            deviceId: true,
+            lat: true,
+            lng: true,
+            batteryLevel: true,
+            signalRssiDbm: true,
+            tamperStatus: true,
+            createdAt: true,
+          },
+        })
+      : [];
+
+    const telemetryMap = new Map(telemetryRows.map((t) => [t.paroleeId, t]));
+
+    const assignedParolees = assignments.map((a) => {
+      const parolee = paroleeMap.get(a.paroleeId);
+      const telemetry = telemetryMap.get(a.paroleeId);
+
+      return {
+        id: a.paroleeId,
+        paroleeNo: parolee?.paroleeNo || "—",
+        fullName: parolee?.fullName || "—",
+        startAt: a.startAt,
+        deviceId: telemetry?.deviceId || "—",
+        lat: telemetry?.lat ?? null,
+        lng: telemetry?.lng ?? null,
+        batteryLevel:
+          telemetry?.batteryLevel !== null && telemetry?.batteryLevel !== undefined
+            ? telemetry.batteryLevel
+            : "—",
+        signal:
+          telemetry?.signalRssiDbm !== null && telemetry?.signalRssiDbm !== undefined
+            ? `${telemetry.signalRssiDbm} dBm`
+            : "—",
+        tamper: telemetry?.tamperStatus || "OK",
+        lastSeen: telemetry?.createdAt
+          ? new Date(telemetry.createdAt).toISOString()
+          : null,
+        status: telemetry ? "COMPLIANT" : "OFFLINE",
+      };
+    });
 
     return jsonNoCache(
       {

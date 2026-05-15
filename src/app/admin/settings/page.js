@@ -62,6 +62,7 @@ export default function AdminSettingsPage() {
 
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+  const [settingsError, setSettingsError] = useState("");
 
   useEffect(() => {
     loadAll();
@@ -114,12 +115,48 @@ export default function AdminSettingsPage() {
     }
   }
 
+  function validateSettings(settingsToValidate) {
+    const telemetry = Number(settingsToValidate.telemetryIntervalSec || 0);
+    const liveFeed = Number(settingsToValidate.liveFeedRefreshSec || 0);
+
+    if (!telemetry || telemetry < 1) {
+      return "Telemetry Interval must be at least 1 second.";
+    }
+
+    if (telemetry > 30) {
+      return "Telemetry Interval cannot exceed 30 seconds.";
+    }
+
+    if (!liveFeed || liveFeed < 1) {
+      return "Live Feed Refresh must be at least 1 second.";
+    }
+
+    if (liveFeed !== telemetry) {
+      return "Live Feed Refresh must match Telemetry Interval.";
+    }
+
+    return "";
+  }
+
   function handleSettingsChange(e) {
     const { name, value, type, checked } = e.target;
-    setSettings((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }));
+    setSettings((prev) => {
+      const nextValue = type === "checkbox" ? checked : value;
+      const nextState = {
+        ...prev,
+        [name]: nextValue,
+      };
+
+      if (name === "telemetryIntervalSec" || name === "liveFeedRefreshSec") {
+        const normalized = String(nextValue).replace(/[^0-9]/g, "");
+        nextState.telemetryIntervalSec = normalized;
+        nextState.liveFeedRefreshSec = normalized;
+      }
+
+      const validationError = validateSettings(nextState);
+      setSettingsError(validationError);
+      return nextState;
+    });
   }
 
   function handleAdminChange(e) {
@@ -137,6 +174,14 @@ export default function AdminSettingsPage() {
       setSaving(true);
       setMsg("");
       setErr("");
+      setSettingsError("");
+
+      const validationError = validateSettings(settings);
+      if (validationError) {
+        setSettingsError(validationError);
+        setErr(validationError);
+        return;
+      }
 
       const res = await fetch("/api/settings", {
         method: "PUT",
@@ -375,13 +420,21 @@ export default function AdminSettingsPage() {
                             onChange={handleSettingsChange}
                             placeholder="300"
                           />
-                          <FieldControlled
-                            label="Telemetry Interval (seconds)"
-                            name="telemetryIntervalSec"
-                            value={settings.telemetryIntervalSec}
-                            onChange={handleSettingsChange}
-                            placeholder="10"
-                          />
+                          <div>
+                            <div className="text-xs text-slate-400">Telemetry Interval (seconds)</div>
+                            <input
+                              type="number"
+                              name="telemetryIntervalSec"
+                              min={1}
+                              max={30}
+                              className={inputClass}
+                              value={settings.telemetryIntervalSec}
+                              onChange={handleSettingsChange}
+                            />
+                            <p className="mt-2 text-xs text-slate-400">
+                              Must be between 1 and 30 seconds. Live Feed Refresh is synced automatically.
+                            </p>
+                          </div>
                           <FieldControlled
                             label="Low Battery Threshold"
                             name="lowBatteryThreshold"
@@ -389,13 +442,20 @@ export default function AdminSettingsPage() {
                             onChange={handleSettingsChange}
                             placeholder="20"
                           />
-                          <FieldControlled
-                            label="Live Feed Refresh (seconds)"
-                            name="liveFeedRefreshSec"
-                            value={settings.liveFeedRefreshSec}
-                            onChange={handleSettingsChange}
-                            placeholder="5"
-                          />
+                          <div>
+                            <div className="text-xs text-slate-400">Live Feed Refresh (seconds)</div>
+                            <input
+                              type="number"
+                              name="liveFeedRefreshSec"
+                              min={1}
+                              className={inputClass}
+                              value={settings.liveFeedRefreshSec}
+                              readOnly
+                            />
+                            <p className="mt-2 text-xs text-slate-400">
+                              Synced with Telemetry Interval for consistent live refresh behavior.
+                            </p>
+                          </div>
                         </div>
 
                         <button
@@ -405,6 +465,11 @@ export default function AdminSettingsPage() {
                         >
                           {saving ? "Saving..." : "Save Changes"}
                         </button>
+                        {settingsError && (
+                          <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-100">
+                            {settingsError}
+                          </div>
+                        )}
                       </section>
                     )}
 

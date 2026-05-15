@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 const sectionCard =
@@ -19,38 +20,78 @@ const btnDanger =
   "inline-flex items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/15 px-4 py-2 text-sm font-medium text-rose-100 transition hover:bg-rose-500/25 active:scale-[0.99]";
 
 export default function OfficerProfilePage() {
+  const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
-  const [officerName, setOfficerName] = useState(() =>
-    typeof window !== "undefined"
-      ? localStorage.getItem("officerName") ?? ""
-      : ""
-  );
-  const [officerEmail, setOfficerEmail] = useState(() =>
-    typeof window !== "undefined"
-      ? localStorage.getItem("officerEmail") ?? ""
-      : ""
-  );
-  const [officerBadge, setOfficerBadge] = useState(() =>
-    typeof window !== "undefined"
-      ? localStorage.getItem("officerBadgeId") ?? ""
-      : ""
-  );
+  const [officerId, setOfficerId] = useState("");
+  const [officerName, setOfficerName] = useState("");
+  const [officerEmail, setOfficerEmail] = useState("");
+  const [officerBadge, setOfficerBadge] = useState("");
 
-  const [fullName, setFullName] = useState(() =>
-    typeof window !== "undefined"
-      ? localStorage.getItem("officerName") ?? ""
-      : ""
-  );
-  const [email, setEmail] = useState(() =>
-    typeof window !== "undefined"
-      ? localStorage.getItem("officerEmail") ?? ""
-      : ""
-  );
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [area, setArea] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+
+  useEffect(() => {
+    const id = typeof window !== "undefined" ? localStorage.getItem("officerId") : null;
+    if (!id) {
+      router.push("/officer/login");
+      return;
+    }
+
+    setOfficerId(id);
+
+    const name = localStorage.getItem("officerName");
+    const emailValue = localStorage.getItem("officerEmail");
+    const badge = localStorage.getItem("officerBadgeId");
+
+    setOfficerName(name || "Officer");
+    setOfficerEmail(emailValue || "");
+    setOfficerBadge(badge || "");
+    setFullName(name || "");
+    setEmail(emailValue || "");
+
+    async function loadProfile() {
+      try {
+        setLoading(true);
+        const res = await fetch(`/api/officers/${id}`, { cache: "no-store" });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setError(data.error || "Unable to load profile");
+          return;
+        }
+
+        setOfficerName(data.fullName || name || "Officer");
+        setOfficerEmail(data.email || emailValue || "");
+        setOfficerBadge(data.badgeId || badge || "");
+        setFullName(data.fullName || name || "");
+        setEmail(data.email || emailValue || "");
+        setPhone(data.phone || "");
+        setArea(data.assignedParolees?.length ? `Assigned ${data.assignedParolees.length} parolee(s)` : "—");
+
+        if (typeof window !== "undefined") {
+          localStorage.setItem("officerName", data.fullName || name || "Officer");
+          localStorage.setItem("officerEmail", data.email || emailValue || "");
+          localStorage.setItem("officerBadgeId", data.badgeId || badge || "");
+        }
+      } catch (err) {
+        console.error(err);
+        setError("Unable to load profile");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadProfile();
+  }, [router]);
 
   function handleLogout() {
     localStorage.removeItem("role");
@@ -86,6 +127,49 @@ export default function OfficerProfilePage() {
     ],
     []
   );
+
+  const canSave =
+    fullName.trim().length > 0 &&
+    email.trim().length > 0 &&
+    (!password || password === confirm);
+
+  async function handleSave() {
+    setError("");
+    setMessage("");
+
+    if (!canSave) {
+      setError("Please fill all required fields and ensure passwords match.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/officers/${officerId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullName, email, phone, area, password }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Unable to save profile");
+      }
+
+      localStorage.setItem("officerName", fullName);
+      localStorage.setItem("officerEmail", email);
+      if (officerBadge) localStorage.setItem("officerBadgeId", officerBadge);
+
+      setOfficerName(fullName);
+      setOfficerEmail(email);
+      setMessage("Profile updated successfully.");
+      setIsEditing(false);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Unable to save profile");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-950 text-white">
@@ -153,6 +237,12 @@ export default function OfficerProfilePage() {
           </aside>
 
           <main className="col-span-12 md:col-span-9 lg:col-span-10 space-y-6 overflow-y-auto h-[calc(95vh-5rem)] pb-0.5">
+            {loading && (
+              <div className="rounded-[28px] border border-white/10 bg-black/20 p-6 text-center text-sm text-slate-300">
+                Loading profile…
+              </div>
+            )}
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {quick.map((s) => (
                 <div
@@ -261,35 +351,45 @@ export default function OfficerProfilePage() {
                     </div>
 
                     {isEditing && (
-                      <div className="mt-4 flex gap-2">
-                        <button
-                          onClick={() => {
-                            localStorage.setItem("officerName", fullName);
-                            localStorage.setItem("officerEmail", email);
+                      <div className="mt-4 space-y-3">
+                        {error && (
+                          <div className="rounded-2xl bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+                            {error}
+                          </div>
+                        )}
 
-                            setOfficerName(fullName);
-                            setOfficerEmail(email);
-                            setIsEditing(false);
-                          }}
-                          className={btnPrimary}
-                        >
-                          Save Changes
-                        </button>
+                        {message && (
+                          <div className="rounded-2xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
+                            {message}
+                          </div>
+                        )}
 
-                        <button
-                          onClick={() => {
-                            setFullName(officerName);
-                            setEmail(officerEmail);
-                            setPhone("");
-                            setArea("");
-                            setPassword("");
-                            setConfirm("");
-                            setIsEditing(false);
-                          }}
-                          className={btnGhost}
-                        >
-                          Cancel
-                        </button>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <button
+                            onClick={handleSave}
+                            disabled={saving}
+                            className={`${btnPrimary} ${saving ? "opacity-70" : ""}`}
+                          >
+                            {saving ? "Saving..." : "Save Changes"}
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setFullName(officerName);
+                              setEmail(officerEmail);
+                              setPhone("");
+                              setArea("");
+                              setPassword("");
+                              setConfirm("");
+                              setError("");
+                              setMessage("");
+                              setIsEditing(false);
+                            }}
+                            className={btnGhost}
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 const sectionCard =
@@ -22,47 +23,65 @@ const selectClass =
   "mt-1 h-10 w-full rounded-xl border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none focus:ring-2 focus:ring-sky-300/30";
 
 export default function OfficerAlertsPage() {
-  const alerts = useMemo(
-    () => [
-      {
-        id: "AL-001",
-        type: "GEOFENCE_BREACH",
-        paroleeId: "PAR-102",
-        severity: "HIGH",
-        message: "Exited allowed zone",
-        time: "—",
-        status: "ACTIVE",
-      },
-      {
-        id: "AL-002",
-        type: "LOW_BATTERY",
-        paroleeId: "PAR-101",
-        severity: "MEDIUM",
-        message: "Battery below 20%",
-        time: "—",
-        status: "ACKNOWLEDGED",
-      },
-      {
-        id: "AL-003",
-        type: "TAMPER",
-        paroleeId: "PAR-103",
-        severity: "CRITICAL",
-        message: "Strap tampering detected",
-        time: "—",
-        status: "ACTIVE",
-      },
-    ],
-    []
-  );
-
+  const router = useRouter();
+  const [officerId, setOfficerId] = useState("");
+  const [officerName, setOfficerName] = useState("Officer");
+  const [alerts, setAlerts] = useState([]);
+  const [assignedParoleeIds, setAssignedParoleeIds] = useState([]);
   const [filterStatus, setFilterStatus] = useState("ALL");
   const [filterSeverity, setFilterSeverity] = useState("ALL");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const [officerName, setOfficerName] = useState(() =>
-    typeof window !== "undefined"
-      ? localStorage.getItem("officerName") ?? "Officer"
-      : "Officer"
-  );
+  useEffect(() => {
+    const id = typeof window !== "undefined" ? localStorage.getItem("officerId") : null;
+    const name = typeof window !== "undefined" ? localStorage.getItem("officerName") : null;
+
+    if (!id) {
+      router.push("/officer/login");
+      return;
+    }
+
+    setOfficerId(id);
+    setOfficerName(name || "Officer");
+
+    async function loadData() {
+      try {
+        setLoading(true);
+        setError("");
+
+        const officerRes = await fetch(`/api/officers/${id}`, { cache: "no-store" });
+        const officerData = await officerRes.json();
+
+        if (!officerRes.ok) {
+          throw new Error(officerData.error || "Unable to load officer assignments");
+        }
+
+        const assignedIds = (officerData.assignedParolees || []).map((item) => item.id);
+        setAssignedParoleeIds(assignedIds);
+
+        const alertRes = await fetch("/api/alerts", { cache: "no-store" });
+        const alertData = await alertRes.json();
+
+        if (!alertRes.ok) {
+          throw new Error(alertData.error || "Unable to load alerts");
+        }
+
+        const filteredAlerts = Array.isArray(alertData)
+          ? alertData.filter((a) => assignedIds.includes(a.paroleeId))
+          : [];
+
+        setAlerts(filteredAlerts);
+      } catch (err) {
+        console.error(err);
+        setError(err.message || "Unable to load alerts");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, [router]);
 
   const filtered = alerts.filter((a) => {
     const okStatus = filterStatus === "ALL" ? true : a.status === filterStatus;
@@ -105,7 +124,7 @@ export default function OfficerAlertsPage() {
               <Link href="/officer/dashboard" className={btnGhost}>
                 ← Dashboard
               </Link>
-              <Link href="/login" className={btnDanger}>
+              <Link href="/officer/login" className={btnDanger}>
                 Logout
               </Link>
             </div>
@@ -137,7 +156,7 @@ export default function OfficerAlertsPage() {
                   </div>
                 </div>
 
-                <Link href="/login" className={`${btnDanger} mt-3 w-full`}>
+                <Link href="/officer/login" className={`${btnDanger} mt-3 w-full`}>
                   Logout
                 </Link>
               </div>
@@ -145,6 +164,12 @@ export default function OfficerAlertsPage() {
           </aside>
 
           <main className="col-span-12 h-[calc(95vh-5rem)] space-y-6 overflow-y-auto pb-0.5 md:col-span-9 lg:col-span-10">
+            {loading && (
+              <div className="rounded-[28px] border border-white/10 bg-black/20 p-6 text-center text-sm text-slate-300">
+                Loading alerts…
+              </div>
+            )}
+
             <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <MiniCard
                 title="Total Alerts"

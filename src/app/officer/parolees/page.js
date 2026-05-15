@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 const sectionCard =
@@ -25,44 +26,61 @@ const selectClass =
   "mt-1 h-10 w-full rounded-xl border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none focus:ring-2 focus:ring-sky-300/30";
 
 export default function OfficerParoleesPage() {
-  const rows = useMemo(
-    () => [
-      {
-        id: "PAR-101",
-        name: "—",
-        deviceId: "DEV-001",
-        lastLat: "7.9064",
-        lastLng: "125.0942",
-        battery: "—",
-        signal: "—",
-        tamper: "—",
-        lastSeen: "—",
-        compliance: "COMPLIANT",
-      },
-      {
-        id: "PAR-102",
-        name: "—",
-        deviceId: "DEV-002",
-        lastLat: "7.9001",
-        lastLng: "125.1020",
-        battery: "—",
-        signal: "—",
-        tamper: "—",
-        lastSeen: "—",
-        compliance: "WARNING",
-      },
-    ],
-    []
-  );
-
+  const router = useRouter();
+  const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("ALL");
+  const [officerName, setOfficerName] = useState("Officer");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const [officerName, setOfficerName] = useState(() =>
-    typeof window !== "undefined"
-      ? localStorage.getItem("officerName") ?? "Officer"
-      : "Officer"
-  );
+  useEffect(() => {
+    const id = typeof window !== "undefined" ? localStorage.getItem("officerId") : null;
+    const name = typeof window !== "undefined" ? localStorage.getItem("officerName") : null;
+
+    if (!id) {
+      router.push("/officer/login");
+      return;
+    }
+
+    setOfficerName(name || "Officer");
+
+    async function loadParolees() {
+      try {
+        setLoading(true);
+        setError("");
+
+        const res = await fetch(`/api/officers/${id}`, { cache: "no-store" });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Unable to load assigned parolees");
+        }
+
+        const items = (data.assignedParolees || []).map((p) => ({
+          id: p.id,
+          name: p.fullName || "—",
+          deviceId: p.deviceId || "—",
+          lastLat: p.lat != null ? String(p.lat) : "—",
+          lastLng: p.lng != null ? String(p.lng) : "—",
+          battery: p.batteryLevel != null ? String(p.batteryLevel) : "—",
+          signal: p.signal || "—",
+          tamper: p.tamper || "—",
+          lastSeen: p.lastSeen ? new Date(p.lastSeen).toLocaleString() : "—",
+          compliance: p.status || "OFFLINE",
+        }));
+
+        setRows(items);
+      } catch (err) {
+        console.error(err);
+        setError(err.message || "Unable to load parolees");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadParolees();
+  }, [router]);
 
   const filtered = rows.filter((r) => {
     const s = search.trim().toLowerCase();
@@ -106,7 +124,7 @@ export default function OfficerParoleesPage() {
               <Link href="/officer/dashboard" className={btnGhost}>
                 ← Dashboard
               </Link>
-              <Link href="/login" className={btnDanger}>
+              <Link href="/officer/login" className={btnDanger}>
                 Logout
               </Link>
             </div>
@@ -137,7 +155,7 @@ export default function OfficerParoleesPage() {
                     </div>
                   </div>
                 </div>
-                <Link href="/login" className={`${btnDanger} mt-3 w-full`}>
+                <Link href="/officer/login" className={`${btnDanger} mt-3 w-full`}>
                   Logout
                 </Link>
               </div>
@@ -145,6 +163,18 @@ export default function OfficerParoleesPage() {
           </aside>
 
           <main className="col-span-12 h-[calc(95vh-5rem)] space-y-6 overflow-y-auto pb-0.5 md:col-span-9 lg:col-span-10">
+            {loading && (
+              <div className="rounded-[28px] border border-white/10 bg-black/20 p-6 text-center text-sm text-slate-300">
+                Loading assigned parolees…
+              </div>
+            )}
+
+            {error && (
+              <div className="rounded-[28px] border border-rose-400/20 bg-rose-500/10 p-4 text-sm text-rose-100">
+                {error}
+              </div>
+            )}
+
             <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <MiniCard
                 title="Assigned Parolees"

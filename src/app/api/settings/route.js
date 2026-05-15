@@ -43,6 +43,30 @@ export async function PUT(req) {
     const body = await req.json();
     const current = await getOrCreateSettings();
 
+    const telemetryIntervalSec = Number(body.telemetryIntervalSec ?? 10);
+    const liveFeedRefreshSec = Number(body.liveFeedRefreshSec ?? telemetryIntervalSec);
+
+    if (!telemetryIntervalSec || telemetryIntervalSec < 1) {
+      return NextResponse.json(
+        { error: "Telemetry Interval must be at least 1 second." },
+        { status: 400 }
+      );
+    }
+
+    if (telemetryIntervalSec > 30) {
+      return NextResponse.json(
+        { error: "Telemetry Interval cannot exceed 30 seconds." },
+        { status: 400 }
+      );
+    }
+
+    if (liveFeedRefreshSec !== telemetryIntervalSec) {
+      return NextResponse.json(
+        { error: "Live Feed Refresh must match Telemetry Interval." },
+        { status: 400 }
+      );
+    }
+
     const settings = await prisma.systemSettings.update({
       where: { id: current.id },
       data: {
@@ -52,9 +76,9 @@ export async function PUT(req) {
         defaultMapLat: Number(body.defaultMapLat ?? 7.9064),
         defaultMapLng: Number(body.defaultMapLng ?? 125.0942),
         defaultGeofenceRadiusM: Number(body.defaultGeofenceRadiusM ?? 300),
-        telemetryIntervalSec: Number(body.telemetryIntervalSec ?? 10),
+        telemetryIntervalSec: telemetryIntervalSec,
         lowBatteryThreshold: Number(body.lowBatteryThreshold ?? 20),
-        liveFeedRefreshSec: Number(body.liveFeedRefreshSec ?? 5),
+        liveFeedRefreshSec: liveFeedRefreshSec,
         geofenceBreachAlerts: Boolean(body.geofenceBreachAlerts),
         deviceTamperAlerts: Boolean(body.deviceTamperAlerts),
         lowBatteryAlerts: Boolean(body.lowBatteryAlerts),
