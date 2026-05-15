@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { setClientStorageItem } from "@/lib/session";
 
 export default function OfficerLoginPage() {
   const router = useRouter();
@@ -32,11 +33,12 @@ export default function OfficerLoginPage() {
         return;
       }
 
-      localStorage.setItem("role", "OFFICER");
-      localStorage.setItem("officerId", data.officer?.id || "");
-      localStorage.setItem("officerName", data.officer?.fullName || "");
-      localStorage.setItem("officerEmail", data.officer?.email || "");
-      localStorage.setItem("officerBadgeId", data.officer?.badgeId || "");
+      setClientStorageItem("role", "OFFICER", stayLoggedIn);
+      setClientStorageItem("officerId", data.officer?.id || "", stayLoggedIn);
+      setClientStorageItem("officerName", data.officer?.fullName || "", stayLoggedIn);
+      setClientStorageItem("officerEmail", data.officer?.email || "", stayLoggedIn);
+      setClientStorageItem("officerBadgeId", data.officer?.badgeId || "", stayLoggedIn);
+      setClientStorageItem("officerLoggedInAt", new Date().toISOString(), stayLoggedIn);
 
       router.push("/officer/dashboard");
     } catch (err) {
@@ -163,7 +165,9 @@ export default function OfficerLoginPage() {
                   </label>
 
                   <span className="text-white/50">
-                    Forgot password not available yet
+                    <Link href="/officer/forgot-password" className="underline hover:text-white">
+                      Forgot password?
+                    </Link>
                   </span>
                 </div>
 

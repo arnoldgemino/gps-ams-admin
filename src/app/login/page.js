@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { setClientStorageItem } from "@/lib/session";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -31,6 +32,10 @@ export default function LoginPage() {
         setError(data.error || data.message || "Login failed");
         return;
       }
+
+      setClientStorageItem("role", "ADMIN", stayLoggedIn);
+      setClientStorageItem("adminEmail", email, stayLoggedIn);
+      setClientStorageItem("adminLoggedInAt", new Date().toISOString(), stayLoggedIn);
 
       router.push("/admin/dashboard");
     } catch (err) {
@@ -184,7 +189,9 @@ export default function LoginPage() {
                   </label>
 
                   <span className="text-white/50">
-                    Forgot password not available yet
+                    <Link href="/forgot-password" className="underline hover:text-white">
+                      Forgot password?
+                    </Link>
                   </span>
                 </div>
 
