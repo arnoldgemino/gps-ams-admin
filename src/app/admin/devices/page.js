@@ -1,7 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+const DEVICE_INFO_SERVICE = 0x180a;
+const MODEL_NUMBER_CHAR = 0x2a24;
+const SERIAL_NUMBER_CHAR = 0x2a25;
 
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
@@ -24,7 +29,24 @@ const inputClass =
 const selectClass =
   "mt-1 h-10 w-full rounded-xl border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none focus:ring-2 focus:ring-sky-300/30";
 
+function normalizeList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
+function decodeCharacteristicValue(value) {
+  try {
+    return new TextDecoder().decode(value).trim();
+  } catch {
+    return "";
+  }
+}
+
 export default function AdminDevicesPage() {
+  const router = useRouter();
+
   const [rows, setRows] = useState([]);
   const [parolees, setParolees] = useState([]);
   const [search, setSearch] = useState("");
@@ -37,6 +59,8 @@ export default function AdminDevicesPage() {
 
   const [saving, setSaving] = useState(false);
   const [loadingView, setLoadingView] = useState(false);
+  const [loadingPage, setLoadingPage] = useState(true);
+  const [scanning, setScanning] = useState(false);
 
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [selectedDeviceDetail, setSelectedDeviceDetail] = useState(null);
@@ -58,17 +82,47 @@ export default function AdminDevicesPage() {
   });
 
   useEffect(() => {
-    fetchDevices();
-    fetchParolees();
+    loadPage();
   }, []);
+
+  async function loadPage() {
+    try {
+      setLoadingPage(true);
+      await Promise.all([fetchDevices(), fetchParolees()]);
+    } finally {
+      setLoadingPage(false);
+    }
+  }
 
   async function fetchDevices() {
     try {
       const res = await fetch("/api/devices", { cache: "no-store" });
       const data = await res.json();
-      setRows(Array.isArray(data) ? data : []);
+
+      if (!res.ok) {
+        console.error("Failed to fetch devices", data);
+        setRows([]);
+        return;
+      }
+
+      const list = normalizeList(data).map((r) => ({
+        id: r.id,
+        deviceCode: r.deviceCode || "—",
+        serialNumber: r.serialNumber || "—",
+        status: r.status || "IN_STOCK",
+        paroleeId: r.paroleeId || "",
+        paroleeLabel: r.paroleeLabel || "—",
+        latestBatteryLevel: r.latestBatteryLevel ?? null,
+        latestSignalRssiDbm: r.latestSignalRssiDbm ?? null,
+        lastPing: r.lastPing || null,
+        liveState: r.liveState || "OFFLINE",
+        createdAt: r.createdAt || null,
+      }));
+
+      setRows(list);
     } catch (error) {
       console.error("Failed to fetch devices", error);
+      setRows([]);
     }
   }
 
@@ -76,9 +130,23 @@ export default function AdminDevicesPage() {
     try {
       const res = await fetch("/api/parolees", { cache: "no-store" });
       const data = await res.json();
-      setParolees(Array.isArray(data) ? data : []);
+
+      if (!res.ok) {
+        console.error("Failed to fetch parolees", data);
+        setParolees([]);
+        return;
+      }
+
+      const list = normalizeList(data).map((p) => ({
+        id: p.id,
+        paroleeNo: p.paroleeNo || "—",
+        fullName: p.fullName || p.name || "—",
+      }));
+
+      setParolees(list);
     } catch (error) {
       console.error("Failed to fetch parolees", error);
+      setParolees([]);
     }
   }
 
@@ -104,6 +172,81 @@ export default function AdminDevicesPage() {
     }
   }
 
+  async function scanBluetoothDevice() {
+    if (typeof navigator === "undefined" || !navigator.bluetooth) {
+      alert("Web Bluetooth is not supported on this browser/device.");
+      return;
+    }
+
+    let bleDevice = null;
+    let gattServer = null;
+
+    try {
+      setScanning(true);
+
+      bleDevice = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: [DEVICE_INFO_SERVICE],
+      });
+
+      let deviceCode = "";
+      let serialNumber = "";
+
+      if (bleDevice.gatt) {
+        try {
+          gattServer = await bleDevice.gatt.connect();
+          const service = await gattServer.getPrimaryService(DEVICE_INFO_SERVICE);
+
+          try {
+            const modelChar = await service.getCharacteristic(MODEL_NUMBER_CHAR);
+            const modelValue = await modelChar.readValue();
+            deviceCode = decodeCharacteristicValue(modelValue);
+          } catch {
+            // fallback later
+          }
+
+          try {
+            const serialChar = await service.getCharacteristic(SERIAL_NUMBER_CHAR);
+            const serialValue = await serialChar.readValue();
+            serialNumber = decodeCharacteristicValue(serialValue);
+          } catch {
+            // fallback later
+          }
+        } catch {
+          // fallback later
+        }
+      }
+
+      if (!deviceCode) {
+        deviceCode = (bleDevice.name || "ESP32-DEVICE")
+          .replace(/\s+/g, "-")
+          .toUpperCase();
+      }
+
+      if (!serialNumber) {
+        serialNumber = bleDevice.id || bleDevice.name || "UNKNOWN-SERIAL";
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        deviceCode,
+        serialNumber,
+      }));
+    } catch (error) {
+      if (error?.name !== "NotFoundError") {
+        console.error("Bluetooth scan failed:", error);
+        alert("Bluetooth scan failed.");
+      }
+    } finally {
+      try {
+        if (gattServer?.connected) {
+          gattServer.disconnect();
+        }
+      } catch {}
+      setScanning(false);
+    }
+  }
+
   function handleChange(e) {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -123,18 +266,24 @@ export default function AdminDevicesPage() {
     try {
       setSaving(true);
 
+      const payload = {
+        deviceCode: form.deviceCode.trim(),
+        serialNumber: form.serialNumber.trim(),
+        status: form.status,
+      };
+
       const res = await fetch("/api/devices", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
 
       const result = await res.json();
 
       if (!res.ok) {
-        alert(result.error || "Failed to create device");
+        alert(result.error || result.message || "Failed to create device");
         return;
       }
 
@@ -157,6 +306,7 @@ export default function AdminDevicesPage() {
 
   async function handleOpenView(device) {
     setSelectedDevice(device);
+    setSelectedDeviceDetail(null);
     setOpenView(true);
     await fetchDeviceDetail(device.id);
   }
@@ -183,18 +333,24 @@ export default function AdminDevicesPage() {
     try {
       setSaving(true);
 
+      const payload = {
+        deviceCode: editForm.deviceCode.trim(),
+        serialNumber: editForm.serialNumber.trim(),
+        status: editForm.status,
+      };
+
       const res = await fetch(`/api/devices/${selectedDevice.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify(payload),
       });
 
       const result = await res.json();
 
       if (!res.ok) {
-        alert(result.error || "Failed to update device");
+        alert(result.error || result.message || "Failed to update device");
         return;
       }
 
@@ -230,7 +386,7 @@ export default function AdminDevicesPage() {
       const result = await res.json();
 
       if (!res.ok) {
-        alert(result.error || "Failed to assign device");
+        alert(result.error || result.message || "Failed to assign device");
         return;
       }
 
@@ -245,18 +401,24 @@ export default function AdminDevicesPage() {
     }
   }
 
-  const filtered = rows.filter((r) => {
-    const s = search.trim().toLowerCase();
-    const matchSearch =
-      !s ||
-      r.deviceCode.toLowerCase().includes(s) ||
-      r.serialNumber.toLowerCase().includes(s) ||
-      (r.paroleeId || "").toLowerCase().includes(s) ||
-      (r.paroleeLabel || "").toLowerCase().includes(s);
+  function handleLogout() {
+    router.push("/login");
+  }
 
-    const matchStatus = filterStatus === "ALL" ? true : r.status === filterStatus;
-    return matchSearch && matchStatus;
-  });
+  const filtered = useMemo(() => {
+    return rows.filter((r) => {
+      const s = search.trim().toLowerCase();
+      const matchSearch =
+        !s ||
+        String(r.deviceCode || "").toLowerCase().includes(s) ||
+        String(r.serialNumber || "").toLowerCase().includes(s) ||
+        String(r.paroleeId || "").toLowerCase().includes(s) ||
+        String(r.paroleeLabel || "").toLowerCase().includes(s);
+
+      const matchStatus = filterStatus === "ALL" ? true : r.status === filterStatus;
+      return matchSearch && matchStatus;
+    });
+  }, [rows, search, filterStatus]);
 
   const totalDevices = rows.length;
   const inService = rows.filter((r) => r.status === "IN_SERVICE").length;
@@ -267,7 +429,7 @@ export default function AdminDevicesPage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-950 text-white">
-      <div className="absolute inset-0 bg-[url('/images/login-bg.jpg')] bg-cover bg-center opacity-20" />
+      <div className="absolute inset-0 bg-[url('/bg.png')] bg-cover bg-center opacity-20" />
       <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(2,6,23,0.95),rgba(10,24,52,0.88),rgba(3,7,18,0.96))]" />
       <div className="absolute inset-0 backdrop-blur-[2px]" />
 
@@ -323,7 +485,9 @@ export default function AdminDevicesPage() {
                   </div>
                 </div>
 
-                <button className={`${btnDanger} mt-3 w-full`}>Logout</button>
+                <button onClick={handleLogout} className={`${btnDanger} mt-3 w-full`}>
+                  Logout
+                </button>
               </div>
             </div>
           </aside>
@@ -362,8 +526,9 @@ export default function AdminDevicesPage() {
                 </div>
 
                 <div className="flex gap-2">
-                  <button className={btnGhost}>Export</button>
-                  <button className={btnSecondary}>Bulk Actions</button>
+                  <button className={btnGhost} onClick={fetchDevices}>
+                    Refresh
+                  </button>
                 </div>
               </div>
 
@@ -420,80 +585,86 @@ export default function AdminDevicesPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-slate-950/60 text-slate-300 backdrop-blur">
                     <tr className="border-b border-white/10">
-                      <th className="py-3 px-3 text-left font-medium">Device Code</th>
-                      <th className="py-3 px-3 text-left font-medium">Serial</th>
-                      <th className="py-3 px-3 text-left font-medium">Assigned Parolee</th>
-                      <th className="py-3 px-3 text-left font-medium">Status</th>
-                      <th className="py-3 px-3 text-left font-medium">Battery</th>
-                      <th className="py-3 px-3 text-left font-medium">Signal</th>
-                      <th className="py-3 px-3 text-left font-medium">Last Ping</th>
-                      <th className="py-3 px-3 text-right font-medium">Actions</th>
+                      <th className="px-3 py-3 text-left font-medium">Device Code</th>
+                      <th className="px-3 py-3 text-left font-medium">Serial</th>
+                      <th className="px-3 py-3 text-left font-medium">Assigned Parolee</th>
+                      <th className="px-3 py-3 text-left font-medium">Status</th>
+                      <th className="px-3 py-3 text-left font-medium">Battery</th>
+                      <th className="px-3 py-3 text-left font-medium">Signal</th>
+                      <th className="px-3 py-3 text-left font-medium">Last Ping</th>
+                      <th className="px-3 py-3 text-right font-medium">Actions</th>
                     </tr>
                   </thead>
 
                   <tbody className="divide-y divide-white/10">
-                    {filtered.map((r) => (
-                      <tr key={r.id} className="hover:bg-white/[0.03]">
-                        <td className="py-3 px-3 font-semibold text-white">{r.deviceCode}</td>
-                        <td className="py-3 px-3 text-slate-300">{r.serialNumber}</td>
-                        <td className="py-3 px-3 text-slate-300">
-                          {r.paroleeLabel || "—"}
-                        </td>
-
-                        <td className="py-3 px-3">
-                          <Badge
-                            tone={
-                              r.status === "IN_SERVICE"
-                                ? "green"
-                                : r.status === "IN_STOCK"
-                                ? "gray"
-                                : r.status === "MAINTENANCE"
-                                ? "amber"
-                                : "red"
-                            }
-                          >
-                            {r.status}
-                          </Badge>
-                        </td>
-
-                        <td className="py-3 px-3 text-slate-300">
-  {r.liveState === "ONLINE" ? (r.latestBatteryLevel ?? "—") : "—"}
-</td>
-<td className="py-3 px-3 text-slate-300">
-  {r.liveState === "ONLINE" ? (r.latestSignalRssiDbm ?? "—") : "—"}
-</td>
-<td className="py-3 px-3 text-slate-400">
-  {r.liveState === "ONLINE"
-    ? (r.lastPing ? new Date(r.lastPing).toLocaleString() : "—")
-    : "OFFLINE"}
-</td>
-
-                       <td className="py-3 px-3">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              className={btnSecondary}
-                              onClick={() => handleOpenView(r)}
-                            >
-                              View
-                            </button>
-                            <button
-                              className={btnGhost}
-                              onClick={() => handleOpenEdit(r)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              className={btnGhost}
-                              onClick={() => handleOpenAssign(r)}
-                            >
-                              Assign
-                            </button>
-                          </div>
+                    {loadingPage ? (
+                      <tr>
+                        <td className="py-10 text-center text-slate-400" colSpan={8}>
+                          Loading devices...
                         </td>
                       </tr>
-                    ))}
+                    ) : filtered.length > 0 ? (
+                      filtered.map((r) => (
+                        <tr key={r.id} className="hover:bg-white/[0.03]">
+                          <td className="px-3 py-3 font-semibold text-white">{r.deviceCode}</td>
+                          <td className="px-3 py-3 text-slate-300">{r.serialNumber}</td>
+                          <td className="px-3 py-3 text-slate-300">{r.paroleeLabel || "—"}</td>
 
-                    {filtered.length === 0 && (
+                          <td className="px-3 py-3">
+                            <Badge
+                              tone={
+                                r.status === "IN_SERVICE"
+                                  ? "green"
+                                  : r.status === "IN_STOCK"
+                                  ? "gray"
+                                  : r.status === "MAINTENANCE"
+                                  ? "amber"
+                                  : "red"
+                              }
+                            >
+                              {r.status}
+                            </Badge>
+                          </td>
+
+                          <td className="px-3 py-3 text-slate-300">
+                            {r.liveState === "ONLINE" ? (r.latestBatteryLevel ?? "—") : "—"}
+                          </td>
+                          <td className="px-3 py-3 text-slate-300">
+                            {r.liveState === "ONLINE" ? (r.latestSignalRssiDbm ?? "—") : "—"}
+                          </td>
+                          <td className="px-3 py-3 text-slate-400">
+                            {r.liveState === "ONLINE"
+                              ? r.lastPing
+                                ? new Date(r.lastPing).toLocaleString()
+                                : "—"
+                              : "OFFLINE"}
+                          </td>
+
+                          <td className="px-3 py-3">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                className={btnSecondary}
+                                onClick={() => handleOpenView(r)}
+                              >
+                                View
+                              </button>
+                              <button
+                                className={btnGhost}
+                                onClick={() => handleOpenEdit(r)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className={btnGhost}
+                                onClick={() => handleOpenAssign(r)}
+                              >
+                                Assign
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
                       <tr>
                         <td className="py-10 text-center text-slate-400" colSpan={8}>
                           No results found.
@@ -510,8 +681,12 @@ export default function AdminDevicesPage() {
                   <span className="font-semibold">{rows.length}</span>
                 </div>
                 <div className="flex gap-2">
-                  <button className={btnGhost}>Prev</button>
-                  <button className={btnGhost}>Next</button>
+                  <button className={btnGhost} disabled>
+                    Prev
+                  </button>
+                  <button className={btnGhost} disabled>
+                    Next
+                  </button>
                 </div>
               </div>
             </section>
@@ -521,42 +696,67 @@ export default function AdminDevicesPage() {
 
       {openCreate && (
         <Modal title="Add Device" onClose={() => setOpenCreate(false)}>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field
-              label="Device Code"
-              name="deviceCode"
-              placeholder="DEV-001"
-              value={form.deviceCode}
-              onChange={handleChange}
-            />
-            <Field
-              label="Serial Number"
-              name="serialNumber"
-              placeholder="SN-XXXXXX"
-              value={form.serialNumber}
-              onChange={handleChange}
-            />
-            <div>
-              <div className="text-xs text-slate-400">Status</div>
-              <select
-                name="status"
-                value={form.status}
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-sky-400/20 bg-sky-500/10 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="font-semibold text-white">Bluetooth Scan</div>
+                  <div className="text-sm text-slate-300">
+                    Search your ESP32 device and auto-fill Device Code and Serial Number.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={scanBluetoothDevice}
+                  className={btnSecondary}
+                  disabled={scanning}
+                >
+                  {scanning ? "Scanning..." : "Search Device"}
+                </button>
+              </div>
+              <p className="mt-3 text-xs text-slate-300/80">
+                Best result: expose BLE Device Information Service on the ESP32.
+                Fallback: device name and device ID will be used if characteristics are unavailable.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field
+                label="Device Code"
+                name="deviceCode"
+                placeholder="DEV-001"
+                value={form.deviceCode}
                 onChange={handleChange}
-                className={selectClass}
-              >
-                <option value="IN_SERVICE" className="bg-slate-900 text-white">
-                  In Service
-                </option>
-                <option value="IN_STOCK" className="bg-slate-900 text-white">
-                  In Stock
-                </option>
-                <option value="MAINTENANCE" className="bg-slate-900 text-white">
-                  Maintenance
-                </option>
-                <option value="LOST" className="bg-slate-900 text-white">
-                  Lost
-                </option>
-              </select>
+              />
+              <Field
+                label="Serial Number"
+                name="serialNumber"
+                placeholder="SN-XXXXXX"
+                value={form.serialNumber}
+                onChange={handleChange}
+              />
+              <div>
+                <div className="text-xs text-slate-400">Status</div>
+                <select
+                  name="status"
+                  value={form.status}
+                  onChange={handleChange}
+                  className={selectClass}
+                >
+                  <option value="IN_SERVICE" className="bg-slate-900 text-white">
+                    In Service
+                  </option>
+                  <option value="IN_STOCK" className="bg-slate-900 text-white">
+                    In Stock
+                  </option>
+                  <option value="MAINTENANCE" className="bg-slate-900 text-white">
+                    Maintenance
+                  </option>
+                  <option value="LOST" className="bg-slate-900 text-white">
+                    Lost
+                  </option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -580,9 +780,9 @@ export default function AdminDevicesPage() {
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Info label="Device Code" value={selectedDeviceDetail.deviceCode} />
-                <Info label="Serial Number" value={selectedDeviceDetail.serialNumber} />
-                <Info label="Status" value={selectedDeviceDetail.status} />
+                <Info label="Device Code" value={selectedDeviceDetail.deviceCode || "—"} />
+                <Info label="Serial Number" value={selectedDeviceDetail.serialNumber || "—"} />
+                <Info label="Status" value={selectedDeviceDetail.status || "—"} />
                 <Info
                   label="Created"
                   value={
@@ -605,15 +805,11 @@ export default function AdminDevicesPage() {
                 />
                 <Info
                   label="Battery"
-                  value={
-                    selectedDeviceDetail.latestTelemetry?.batteryLevel ?? "—"
-                  }
+                  value={selectedDeviceDetail.latestTelemetry?.batteryLevel ?? "—"}
                 />
                 <Info
                   label="Signal"
-                  value={
-                    selectedDeviceDetail.latestTelemetry?.signalRssiDbm ?? "—"
-                  }
+                  value={selectedDeviceDetail.latestTelemetry?.signalRssiDbm ?? "—"}
                 />
               </div>
             </div>
@@ -697,11 +893,7 @@ export default function AdminDevicesPage() {
                   Select parolee
                 </option>
                 {parolees.map((p) => (
-                  <option
-                    key={p.id}
-                    value={p.id}
-                    className="bg-slate-900 text-white"
-                  >
+                  <option key={p.id} value={p.id} className="bg-slate-900 text-white">
                     {p.paroleeNo} - {p.fullName}
                   </option>
                 ))}
