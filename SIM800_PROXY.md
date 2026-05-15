@@ -21,7 +21,7 @@ Use the IP or hostname where this proxy is reachable from the SIM800.
 Example Arduino settings:
 
 ```cpp
-const char serverHost[] = "YOUR_PROXY_HOST_OR_IP";
+const char serverHost[] = "10.1.17.26";
 const int serverPort = 8080;
 const char serverPath[] = "/telemetry";
 ```
