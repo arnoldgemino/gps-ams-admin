@@ -1,81 +1,158 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+function jsonNoCache(data, init = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set("Cache-Control", "no-store, max-age=0");
+  return NextResponse.json(data, { ...init, headers });
+}
+
 export async function GET(req, { params }) {
   try {
-    const { id } = await params;
+    const { id } = params;
+
+    if (!id) {
+      return jsonNoCache({ error: "Parolee ID is required" }, { status: 400 });
+    }
 
     const parolee = await prisma.parolee.findUnique({
       where: { id },
+      select: {
+        id: true,
+        paroleeNo: true,
+        fullName: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
     if (!parolee) {
-      return NextResponse.json({ error: "Parolee not found" }, { status: 404 });
+      return jsonNoCache({ error: "Parolee not found" }, { status: 404 });
     }
 
-    const [officerAssignment, deviceAssignment, latestTelemetry, openAlerts] =
-      await Promise.all([
-        prisma.officerParoleeAssignment.findFirst({
-          where: {
-            paroleeId: id,
-            status: "ACTIVE",
+    const officerAssignment = await prisma.officerParoleeAssignment.findFirst({
+      where: {
+        paroleeId: id,
+        status: "ACTIVE",
+      },
+      orderBy: { startAt: "desc" },
+      select: {
+        officerId: true,
+        officer: {
+          select: {
+            badgeId: true,
+            fullName: true,
           },
-          include: { officer: true },
-          orderBy: { startAt: "desc" },
-        }),
-        prisma.deviceAssignment.findFirst({
-          where: {
-            paroleeId: id,
-            status: "ACTIVE",
-          },
-          include: { device: true },
-          orderBy: { startAt: "desc" },
-        }),
-        prisma.telemetry.findFirst({
-          where: { paroleeId: id },
-          orderBy: { createdAt: "desc" },
-        }),
-        prisma.alert.findMany({
-          where: {
-            paroleeId: id,
-            status: "OPEN",
-          },
-          orderBy: { createdAt: "desc" },
-        }),
-      ]);
-
-    return NextResponse.json({
-      ...parolee,
-      currentOfficerId: officerAssignment?.officerId || "",
-      currentOfficerLabel: officerAssignment?.officer
-        ? `${officerAssignment.officer.badgeId} - ${officerAssignment.officer.fullName}`
-        : "—",
-      currentDeviceId: deviceAssignment?.deviceId || "",
-      currentDeviceLabel: deviceAssignment?.device
-        ? `${deviceAssignment.device.deviceCode} - ${deviceAssignment.device.serialNumber}`
-        : "—",
-      latestTelemetry,
-      openAlerts,
+        },
+      },
     });
+
+    const deviceAssignment = await prisma.deviceAssignment.findFirst({
+      where: {
+        paroleeId: id,
+        status: "ACTIVE",
+      },
+      orderBy: { startAt: "desc" },
+      select: {
+        deviceId: true,
+        device: {
+          select: {
+            deviceCode: true,
+            serialNumber: true,
+          },
+        },
+      },
+    });
+
+    const latestTelemetry = await prisma.telemetry.findFirst({
+      where: { paroleeId: id },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        lat: true,
+        lng: true,
+        batteryLevel: true,
+        signalRssiDbm: true,
+        tamperStatus: true,
+        createdAt: true,
+      },
+    });
+
+    const openAlerts = await prisma.alert.findMany({
+      where: {
+        paroleeId: id,
+        status: "OPEN",
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        type: true,
+        details: true,
+        status: true,
+        createdAt: true,
+        resolvedAt: true,
+      },
+    });
+
+    return jsonNoCache(
+      {
+        ...parolee,
+        currentOfficerId: officerAssignment?.officerId || "",
+        currentOfficerLabel: officerAssignment?.officer
+          ? `${officerAssignment.officer.badgeId} - ${officerAssignment.officer.fullName}`
+          : "—",
+        currentDeviceId: deviceAssignment?.deviceId || "",
+        currentDeviceLabel: deviceAssignment?.device
+          ? `${deviceAssignment.device.deviceCode} - ${deviceAssignment.device.serialNumber}`
+          : "—",
+        latestTelemetry,
+        openAlerts,
+      },
+      { status: 200 }
+    );
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Failed to fetch parolee detail" }, { status: 500 });
+    console.error("GET /api/parolees/[id] error:", error);
+    return jsonNoCache(
+      { error: "Failed to fetch parolee detail" },
+      { status: 500 }
+    );
   }
 }
 
 export async function PUT(req, { params }) {
   try {
-    const { id } = await params;
+    const { id } = params;
     const body = await req.json();
 
-    const { paroleeNo, fullName, status } = body;
+    if (!id) {
+      return jsonNoCache({ error: "Parolee ID is required" }, { status: 400 });
+    }
 
     const existing = await prisma.parolee.findUnique({
       where: { id },
+      select: { id: true },
     });
 
     if (!existing) {
-      return NextResponse.json({ error: "Parolee not found" }, { status: 404 });
+      return jsonNoCache({ error: "Parolee not found" }, { status: 404 });
+    }
+
+    const paroleeNo = String(body.paroleeNo || "").trim();
+    const fullName = String(body.fullName || "").trim();
+    const allowedStatuses = ["ACTIVE", "INACTIVE"];
+    const status = allowedStatuses.includes(body.status)
+      ? body.status
+      : "ACTIVE";
+
+    if (!paroleeNo || !fullName) {
+      return jsonNoCache(
+        { error: "paroleeNo and fullName are required" },
+        { status: 400 }
+      );
     }
 
     const parolee = await prisma.parolee.update({
@@ -85,19 +162,30 @@ export async function PUT(req, { params }) {
         fullName,
         status,
       },
+      select: {
+        id: true,
+        paroleeNo: true,
+        fullName: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
-    return NextResponse.json({ ok: true, data: parolee });
+    return jsonNoCache({ ok: true, data: parolee }, { status: 200 });
   } catch (error) {
-    console.error(error);
+    console.error("PUT /api/parolees/[id] error:", error);
 
-    if (error.code === "P2002") {
-      return NextResponse.json(
+    if (error?.code === "P2002") {
+      return jsonNoCache(
         { error: "Duplicate paroleeNo" },
         { status: 409 }
       );
     }
 
-    return NextResponse.json({ error: "Failed to update parolee" }, { status: 500 });
+    return jsonNoCache(
+      { error: "Failed to update parolee" },
+      { status: 500 }
+    );
   }
 }

@@ -1,16 +1,47 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+
+function jsonNoCache(data, init = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set("Cache-Control", "no-store, max-age=0");
+  return NextResponse.json(data, { ...init, headers });
+}
 
 export async function GET() {
   try {
-    const [officers, assignments] = await Promise.all([
-      prisma.officer.findMany({
-        orderBy: { createdAt: "desc" },
-      }),
-      prisma.officerParoleeAssignment.findMany({
-        where: { status: "ACTIVE" },
-      }),
-    ]);
+    const officers = await prisma.officer.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        badgeId: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!officers.length) {
+      return jsonNoCache([], { status: 200 });
+    }
+
+    const officerIds = officers.map((o) => o.id);
+
+    const assignments = await prisma.officerParoleeAssignment.findMany({
+      where: {
+        status: "ACTIVE",
+        officerId: { in: officerIds },
+      },
+      select: {
+        officerId: true,
+      },
+    });
 
     const countMap = new Map();
 
@@ -23,10 +54,14 @@ export async function GET() {
       activeParolees: countMap.get(o.id) || 0,
     }));
 
-    return NextResponse.json(items);
+    return jsonNoCache(items, { status: 200 });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Failed to fetch officers" }, { status: 500 });
+    console.error("GET /api/officers error:", error);
+
+    return jsonNoCache(
+      { error: "Failed to fetch officers" },
+      { status: 500 }
+    );
   }
 }
 
@@ -34,44 +69,98 @@ export async function POST(req) {
   try {
     const body = await req.json();
 
-    const {
-      badgeId,
-      fullName,
-      email,
-      password,
-      phone = null,
-      status = "ACTIVE",
-    } = body;
+    const badgeId = String(body.badgeId || "").trim();
+    const fullName = String(body.fullName || "").trim();
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "").trim();
+    const phone =
+      body.phone === undefined || body.phone === null || body.phone === ""
+        ? null
+        : String(body.phone).trim();
+
+    const allowedStatuses = ["ACTIVE", "ON_LEAVE", "INACTIVE"];
+    const status = allowedStatuses.includes(body.status)
+      ? body.status
+      : "ACTIVE";
 
     if (!badgeId || !fullName || !email || !password) {
-      return NextResponse.json(
+      return jsonNoCache(
         { error: "badgeId, fullName, email, and password are required" },
         { status: 400 }
       );
     }
+
+    if (password.length < 6) {
+      return jsonNoCache(
+        { error: "Password must be at least 6 characters" },
+        { status: 400 }
+      );
+    }
+
+    const existingEmail = await prisma.officer.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+
+    if (existingEmail) {
+      return jsonNoCache(
+        { error: "Email already exists" },
+        { status: 409 }
+      );
+    }
+
+    const existingBadge = await prisma.officer.findUnique({
+      where: { badgeId },
+      select: { id: true },
+    });
+
+    if (existingBadge) {
+      return jsonNoCache(
+        { error: "Badge ID already exists" },
+        { status: 409 }
+      );
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const officer = await prisma.officer.create({
       data: {
         badgeId,
         fullName,
         email,
-        password,
+        password: hashedPassword,
         phone,
         status,
       },
+      select: {
+        id: true,
+        badgeId: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
-    return NextResponse.json({ ok: true, data: officer }, { status: 201 });
+    return jsonNoCache(
+      { ok: true, data: { ...officer, activeParolees: 0 } },
+      { status: 201 }
+    );
   } catch (error) {
-    console.error(error);
+    console.error("POST /api/officers error:", error);
 
-    if (error.code === "P2002") {
-      return NextResponse.json(
+    if (error?.code === "P2002") {
+      return jsonNoCache(
         { error: "Duplicate badgeId or email" },
         { status: 409 }
       );
     }
 
-    return NextResponse.json({ error: "Failed to create officer" }, { status: 500 });
+    return jsonNoCache(
+      { error: "Failed to create officer" },
+      { status: 500 }
+    );
   }
 }

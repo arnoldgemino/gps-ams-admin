@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
@@ -24,7 +25,16 @@ const inputClass =
 const selectClass =
   "mt-1 h-10 w-full rounded-xl border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none focus:ring-2 focus:ring-sky-300/30";
 
+function normalizeList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
 export default function AdminOfficersPage() {
+  const router = useRouter();
+
   const [rows, setRows] = useState([]);
   const [parolees, setParolees] = useState([]);
   const [search, setSearch] = useState("");
@@ -37,6 +47,7 @@ export default function AdminOfficersPage() {
 
   const [saving, setSaving] = useState(false);
   const [loadingView, setLoadingView] = useState(false);
+  const [loadingPage, setLoadingPage] = useState(true);
 
   const [selectedOfficer, setSelectedOfficer] = useState(null);
   const [selectedOfficerDetail, setSelectedOfficerDetail] = useState(null);
@@ -64,17 +75,44 @@ export default function AdminOfficersPage() {
   });
 
   useEffect(() => {
-    fetchOfficers();
-    fetchParolees();
+    loadPage();
   }, []);
+
+  async function loadPage() {
+    try {
+      setLoadingPage(true);
+      await Promise.all([fetchOfficers(), fetchParolees()]);
+    } finally {
+      setLoadingPage(false);
+    }
+  }
 
   async function fetchOfficers() {
     try {
       const res = await fetch("/api/officers", { cache: "no-store" });
       const data = await res.json();
-      setRows(Array.isArray(data) ? data : []);
+
+      if (!res.ok) {
+        console.error("Failed to fetch officers", data);
+        setRows([]);
+        return;
+      }
+
+      const list = normalizeList(data).map((r) => ({
+        id: r.id,
+        badgeId: r.badgeId || "—",
+        fullName: r.fullName || r.officer || "—",
+        email: r.email || "—",
+        phone: r.phone || "",
+        status: r.status || "INACTIVE",
+        createdAt: r.createdAt || null,
+        activeParolees: Number(r.activeParolees || r.assigned || 0),
+      }));
+
+      setRows(list);
     } catch (error) {
       console.error("Failed to fetch officers", error);
+      setRows([]);
     }
   }
 
@@ -82,9 +120,23 @@ export default function AdminOfficersPage() {
     try {
       const res = await fetch("/api/parolees", { cache: "no-store" });
       const data = await res.json();
-      setParolees(Array.isArray(data) ? data : []);
+
+      if (!res.ok) {
+        console.error("Failed to fetch parolees", data);
+        setParolees([]);
+        return;
+      }
+
+      const list = normalizeList(data).map((p) => ({
+        id: p.id,
+        paroleeNo: p.paroleeNo || "—",
+        fullName: p.fullName || p.name || "—",
+      }));
+
+      setParolees(list);
     } catch (error) {
       console.error("Failed to fetch parolees", error);
+      setParolees([]);
     }
   }
 
@@ -95,7 +147,7 @@ export default function AdminOfficersPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        alert(data.error || "Failed to load officer details");
+        alert(data.error || data.message || "Failed to load officer details");
         return null;
       }
 
@@ -129,18 +181,27 @@ export default function AdminOfficersPage() {
     try {
       setSaving(true);
 
+      const payload = {
+        badgeId: form.badgeId.trim(),
+        fullName: form.fullName.trim(),
+        email: form.email.trim(),
+        password: form.password,
+        phone: form.phone.trim(),
+        status: form.status,
+      };
+
       const res = await fetch("/api/officers", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
 
       const result = await res.json();
 
       if (!res.ok) {
-        alert(result.error || "Failed to create officer");
+        alert(result.error || result.message || "Failed to create officer");
         return;
       }
 
@@ -166,6 +227,7 @@ export default function AdminOfficersPage() {
 
   async function handleOpenView(officer) {
     setSelectedOfficer(officer);
+    setSelectedOfficerDetail(null);
     setOpenView(true);
     await fetchOfficerDetail(officer.id);
   }
@@ -175,7 +237,7 @@ export default function AdminOfficersPage() {
     setEditForm({
       badgeId: officer.badgeId || "",
       fullName: officer.fullName || "",
-      email: officer.email || "",
+      email: officer.email === "—" ? "" : officer.email || "",
       password: "",
       phone: officer.phone || "",
       status: officer.status || "ACTIVE",
@@ -195,18 +257,27 @@ export default function AdminOfficersPage() {
     try {
       setSaving(true);
 
+      const payload = {
+        badgeId: editForm.badgeId.trim(),
+        fullName: editForm.fullName.trim(),
+        email: editForm.email.trim(),
+        password: editForm.password,
+        phone: editForm.phone.trim(),
+        status: editForm.status,
+      };
+
       const res = await fetch(`/api/officers/${selectedOfficer.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify(payload),
       });
 
       const result = await res.json();
 
       if (!res.ok) {
-        alert(result.error || "Failed to update officer");
+        alert(result.error || result.message || "Failed to update officer");
         return;
       }
 
@@ -236,13 +307,15 @@ export default function AdminOfficersPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(assignForm),
+        body: JSON.stringify({
+          paroleeId: assignForm.paroleeId,
+        }),
       });
 
       const result = await res.json();
 
       if (!res.ok) {
-        alert(result.error || "Failed to assign parolee");
+        alert(result.error || result.message || "Failed to assign parolee");
         return;
       }
 
@@ -257,16 +330,22 @@ export default function AdminOfficersPage() {
     }
   }
 
-  const filtered = rows.filter((r) => {
-    const s = search.trim().toLowerCase();
-    const matchSearch =
-      !s ||
-      r.badgeId.toLowerCase().includes(s) ||
-      r.fullName.toLowerCase().includes(s);
+  function handleLogout() {
+    router.push("/login");
+  }
 
-    const matchStatus = filterStatus === "ALL" ? true : r.status === filterStatus;
-    return matchSearch && matchStatus;
-  });
+  const filtered = useMemo(() => {
+    return rows.filter((r) => {
+      const s = search.trim().toLowerCase();
+      const badgeId = String(r.badgeId || "").toLowerCase();
+      const fullName = String(r.fullName || "").toLowerCase();
+
+      const matchSearch = !s || badgeId.includes(s) || fullName.includes(s);
+      const matchStatus = filterStatus === "ALL" ? true : r.status === filterStatus;
+
+      return matchSearch && matchStatus;
+    });
+  }, [rows, search, filterStatus]);
 
   const totalOfficers = rows.length;
   const activeOfficers = rows.filter((r) => r.status === "ACTIVE").length;
@@ -331,7 +410,9 @@ export default function AdminOfficersPage() {
                   </div>
                 </div>
 
-                <button className={`${btnDanger} mt-3 w-full`}>Logout</button>
+                <button onClick={handleLogout} className={`${btnDanger} mt-3 w-full`}>
+                  Logout
+                </button>
               </div>
             </div>
           </aside>
@@ -370,8 +451,9 @@ export default function AdminOfficersPage() {
                 </div>
 
                 <div className="flex gap-2">
-                  <button className={btnGhost}>Export</button>
-                  <button className={btnSecondary}>Bulk Actions</button>
+                  <button className={btnGhost} onClick={fetchOfficers}>
+                    Refresh
+                  </button>
                 </div>
               </div>
 
@@ -437,60 +519,66 @@ export default function AdminOfficersPage() {
                   </thead>
 
                   <tbody className="divide-y divide-white/10">
-                    {filtered.map((r) => (
-                      <tr key={r.id} className="hover:bg-white/[0.03]">
-                        <td className="py-3 px-3 font-semibold text-white">{r.badgeId}</td>
-                        <td className="py-3 px-3 text-slate-200">{r.fullName}</td>
-                        <td className="py-3 px-3 text-slate-300">—</td>
-                        <td className="py-3 px-3 text-slate-300">{r.activeParolees}</td>
-                        <td className="py-3 px-3 text-slate-300">{r.phone || "—"}</td>
-
-                        <td className="py-3 px-3">
-                          <Badge
-                            tone={
-                              r.status === "ACTIVE"
-                                ? "green"
-                                : r.status === "ON_LEAVE"
-                                ? "amber"
-                                : "gray"
-                            }
-                          >
-                            {r.status}
-                          </Badge>
-                        </td>
-
-                        <td className="py-3 px-3 text-slate-400">
-                          {r.createdAt
-                            ? new Date(r.createdAt).toLocaleString()
-                            : "—"}
-                        </td>
-
-                        <td className="py-3 px-3">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              className={btnSecondary}
-                              onClick={() => handleOpenView(r)}
-                            >
-                              View
-                            </button>
-                            <button
-                              className={btnGhost}
-                              onClick={() => handleOpenEdit(r)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              className={btnGhost}
-                              onClick={() => handleOpenAssign(r)}
-                            >
-                              Assign
-                            </button>
-                          </div>
+                    {loadingPage ? (
+                      <tr>
+                        <td className="py-10 text-center text-slate-400" colSpan={8}>
+                          Loading officers...
                         </td>
                       </tr>
-                    ))}
+                    ) : filtered.length > 0 ? (
+                      filtered.map((r) => (
+                        <tr key={r.id} className="hover:bg-white/[0.03]">
+                          <td className="py-3 px-3 font-semibold text-white">{r.badgeId}</td>
+                          <td className="py-3 px-3 text-slate-200">{r.fullName}</td>
+                          <td className="py-3 px-3 text-slate-300">—</td>
+                          <td className="py-3 px-3 text-slate-300">{r.activeParolees}</td>
+                          <td className="py-3 px-3 text-slate-300">{r.phone || "—"}</td>
 
-                    {filtered.length === 0 && (
+                          <td className="py-3 px-3">
+                            <Badge
+                              tone={
+                                r.status === "ACTIVE"
+                                  ? "green"
+                                  : r.status === "ON_LEAVE"
+                                  ? "amber"
+                                  : "gray"
+                              }
+                            >
+                              {r.status}
+                            </Badge>
+                          </td>
+
+                          <td className="py-3 px-3 text-slate-400">
+                            {r.createdAt
+                              ? new Date(r.createdAt).toLocaleString()
+                              : "—"}
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                className={btnSecondary}
+                                onClick={() => handleOpenView(r)}
+                              >
+                                View
+                              </button>
+                              <button
+                                className={btnGhost}
+                                onClick={() => handleOpenEdit(r)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className={btnGhost}
+                                onClick={() => handleOpenAssign(r)}
+                              >
+                                Assign
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
                       <tr>
                         <td className="py-10 text-center text-slate-400" colSpan={8}>
                           No results found.
@@ -507,8 +595,12 @@ export default function AdminOfficersPage() {
                   <span className="font-semibold">{rows.length}</span>
                 </div>
                 <div className="flex gap-2">
-                  <button className={btnGhost}>Prev</button>
-                  <button className={btnGhost}>Next</button>
+                  <button className={btnGhost} disabled>
+                    Prev
+                  </button>
+                  <button className={btnGhost} disabled>
+                    Next
+                  </button>
                 </div>
               </div>
             </section>
@@ -598,11 +690,11 @@ export default function AdminOfficersPage() {
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Info label="Officer ID" value={selectedOfficerDetail.badgeId} />
-                <Info label="Full Name" value={selectedOfficerDetail.fullName} />
-                <Info label="Email" value={selectedOfficerDetail.email} />
+                <Info label="Officer ID" value={selectedOfficerDetail.badgeId || "—"} />
+                <Info label="Full Name" value={selectedOfficerDetail.fullName || "—"} />
+                <Info label="Email" value={selectedOfficerDetail.email || "—"} />
                 <Info label="Phone" value={selectedOfficerDetail.phone || "—"} />
-                <Info label="Status" value={selectedOfficerDetail.status} />
+                <Info label="Status" value={selectedOfficerDetail.status || "—"} />
                 <Info
                   label="Created"
                   value={

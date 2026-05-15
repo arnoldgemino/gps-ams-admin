@@ -1,30 +1,45 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+function jsonNoCache(data, init = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set("Cache-Control", "no-store, max-age=0");
+  return NextResponse.json(data, { ...init, headers });
+}
+
 export async function POST(req, { params }) {
   try {
-    const { id: officerId } = await params;
+    const { id: officerId } = params;
     const body = await req.json();
-    const { paroleeId } = body;
+    const paroleeId = String(body.paroleeId || "").trim();
+
+    if (!officerId) {
+      return jsonNoCache({ error: "Officer ID is required" }, { status: 400 });
+    }
 
     if (!paroleeId) {
-      return NextResponse.json(
-        { error: "paroleeId is required" },
-        { status: 400 }
-      );
+      return jsonNoCache({ error: "paroleeId is required" }, { status: 400 });
     }
 
-    const [officer, parolee] = await Promise.all([
-      prisma.officer.findUnique({ where: { id: officerId } }),
-      prisma.parolee.findUnique({ where: { id: paroleeId } }),
-    ]);
+    const officer = await prisma.officer.findUnique({
+      where: { id: officerId },
+      select: { id: true },
+    });
 
     if (!officer) {
-      return NextResponse.json({ error: "Officer not found" }, { status: 404 });
+      return jsonNoCache({ error: "Officer not found" }, { status: 404 });
     }
 
+    const parolee = await prisma.parolee.findUnique({
+      where: { id: paroleeId },
+      select: { id: true },
+    });
+
     if (!parolee) {
-      return NextResponse.json({ error: "Parolee not found" }, { status: 404 });
+      return jsonNoCache({ error: "Parolee not found" }, { status: 404 });
     }
 
     await prisma.$transaction(async (tx) => {
@@ -49,12 +64,19 @@ export async function POST(req, { params }) {
       });
     });
 
-    return NextResponse.json({
-      ok: true,
-      message: "Parolee assigned successfully",
-    });
+    return jsonNoCache(
+      {
+        ok: true,
+        message: "Parolee assigned successfully",
+      },
+      { status: 200 }
+    );
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Failed to assign parolee" }, { status: 500 });
+    console.error("POST /api/officers/[id]/assign error:", error);
+
+    return jsonNoCache(
+      { error: "Failed to assign parolee" },
+      { status: 500 }
+    );
   }
 }
