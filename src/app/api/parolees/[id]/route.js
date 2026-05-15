@@ -10,9 +10,20 @@ function jsonNoCache(data, init = {}) {
   return NextResponse.json(data, { ...init, headers });
 }
 
+function getRouteId(req, params, paramName = "id") {
+  if (params?.[paramName]) return params[paramName];
+  try {
+    const url = new URL(req.url);
+    const segments = url.pathname.split("/").filter(Boolean);
+    return segments[segments.length - 1] || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(req, { params }) {
   try {
-    const { id } = params;
+    const id = getRouteId(req, params);
 
     if (!id) {
       return jsonNoCache({ error: "Parolee ID is required" }, { status: 400 });
@@ -125,7 +136,7 @@ export async function GET(req, { params }) {
 
 export async function PUT(req, { params }) {
   try {
-    const { id } = params;
+    const id = getRouteId(req, params);
     const body = await req.json();
 
     if (!id) {
