@@ -1,40 +1,92 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+function jsonNoCache(data, init = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set("Cache-Control", "no-store, max-age=0");
+  return NextResponse.json(data, { ...init, headers });
+}
+
 export async function GET() {
   try {
-    const settings = await prisma.systemSettings.findFirst();
+    const settings = await prisma.systemSettings.findFirst({
+      select: {
+        telemetryIntervalSec: true,
+      },
+    });
+
     const telemetryIntervalSec = settings?.telemetryIntervalSec ?? 10;
     const offlineThresholdSec = Math.max(telemetryIntervalSec * 6, 60);
     const cutoff = new Date(Date.now() - offlineThresholdSec * 1000);
 
-    const [devices, assignments, telemetryRows] = await Promise.all([
-      prisma.device.findMany({
-        orderBy: { createdAt: "desc" },
-      }),
-      prisma.deviceAssignment.findMany({
-        where: { status: "ACTIVE" },
-        include: { parolee: true },
-        orderBy: { startAt: "desc" },
-      }),
-      prisma.telemetry.findMany({
-        orderBy: { createdAt: "desc" },
-        take: 1000,
-      }),
-    ]);
+    const devices = await prisma.device.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        deviceCode: true,
+        serialNumber: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!devices.length) {
+      return jsonNoCache([], { status: 200 });
+    }
+
+    const deviceIds = devices.map((d) => d.id);
+
+    const assignments = await prisma.deviceAssignment.findMany({
+      where: {
+        status: "ACTIVE",
+        deviceId: { in: deviceIds },
+      },
+      orderBy: [
+        { deviceId: "asc" },
+        { startAt: "desc" },
+      ],
+      distinct: ["deviceId"],
+      select: {
+        deviceId: true,
+        paroleeId: true,
+        parolee: {
+          select: {
+            paroleeNo: true,
+            fullName: true,
+          },
+        },
+      },
+    });
+
+    const telemetryRows = await prisma.telemetry.findMany({
+      where: {
+        deviceId: { in: deviceIds },
+      },
+      orderBy: [
+        { deviceId: "asc" },
+        { createdAt: "desc" },
+      ],
+      distinct: ["deviceId"],
+      select: {
+        deviceId: true,
+        createdAt: true,
+        batteryLevel: true,
+        signalRssiDbm: true,
+      },
+    });
 
     const activeAssignmentMap = new Map();
     for (const a of assignments) {
-      if (!activeAssignmentMap.has(a.deviceId)) {
-        activeAssignmentMap.set(a.deviceId, a);
-      }
+      activeAssignmentMap.set(a.deviceId, a);
     }
 
     const latestTelemetryMap = new Map();
     for (const t of telemetryRows) {
-      if (!latestTelemetryMap.has(t.deviceId)) {
-        latestTelemetryMap.set(t.deviceId, t);
-      }
+      latestTelemetryMap.set(t.deviceId, t);
     }
 
     const items = devices.map((d) => {
@@ -47,42 +99,72 @@ export async function GET() {
         id: d.id,
         deviceCode: d.deviceCode,
         serialNumber: d.serialNumber,
-        status: d.status, // inventory/device record status
+        status: d.status,
         liveState: isFresh ? "ONLINE" : "OFFLINE",
-        apiKey: d.apiKey,
         createdAt: d.createdAt,
         updatedAt: d.updatedAt,
         paroleeId: assignment?.paroleeId || "",
         paroleeLabel: assignment?.parolee
           ? `${assignment.parolee.paroleeNo} - ${assignment.parolee.fullName}`
           : "—",
-
-        // live values only if fresh telemetry
         lastPing: isFresh ? telemetry?.createdAt || null : null,
         latestBatteryLevel: isFresh ? telemetry?.batteryLevel ?? null : null,
         latestSignalRssiDbm: isFresh ? telemetry?.signalRssiDbm ?? null : null,
-
-        // optional historical info
         lastSeenAt: telemetry?.createdAt || null,
       };
     });
 
-    return NextResponse.json(items);
+    return jsonNoCache(items, { status: 200 });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Failed to fetch devices" }, { status: 500 });
+    console.error("GET /api/devices error:", error);
+
+    return jsonNoCache(
+      { error: "Failed to fetch devices" },
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { deviceCode, serialNumber, status = "IN_SERVICE" } = body;
+
+    const deviceCode = String(body.deviceCode || "").trim();
+    const serialNumber = String(body.serialNumber || "").trim();
+
+    const allowedStatuses = ["IN_SERVICE", "IN_STOCK", "MAINTENANCE", "LOST"];
+    const status = allowedStatuses.includes(body.status)
+      ? body.status
+      : "IN_SERVICE";
 
     if (!deviceCode || !serialNumber) {
-      return NextResponse.json(
+      return jsonNoCache(
         { error: "deviceCode and serialNumber are required" },
         { status: 400 }
+      );
+    }
+
+    const existingDeviceCode = await prisma.device.findUnique({
+      where: { deviceCode },
+      select: { id: true },
+    });
+
+    if (existingDeviceCode) {
+      return jsonNoCache(
+        { error: "Device code already exists" },
+        { status: 409 }
+      );
+    }
+
+    const existingSerial = await prisma.device.findUnique({
+      where: { serialNumber },
+      select: { id: true },
+    });
+
+    if (existingSerial) {
+      return jsonNoCache(
+        { error: "Serial number already exists" },
+        { status: 409 }
       );
     }
 
@@ -93,19 +175,33 @@ export async function POST(req) {
         status,
         apiKey: crypto.randomUUID(),
       },
+      select: {
+        id: true,
+        deviceCode: true,
+        serialNumber: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
-    return NextResponse.json({ ok: true, data: device }, { status: 201 });
+    return jsonNoCache(
+      { ok: true, data: device },
+      { status: 201 }
+    );
   } catch (error) {
-    console.error(error);
+    console.error("POST /api/devices error:", error);
 
-    if (error.code === "P2002") {
-      return NextResponse.json(
+    if (error?.code === "P2002") {
+      return jsonNoCache(
         { error: "Duplicate deviceCode or serialNumber" },
         { status: 409 }
       );
     }
 
-    return NextResponse.json({ error: "Failed to create device" }, { status: 500 });
+    return jsonNoCache(
+      { error: "Failed to create device" },
+      { status: 500 }
+    );
   }
 }
