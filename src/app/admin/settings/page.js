@@ -425,7 +425,7 @@ export default function AdminSettingsPage() {
                             <input
                               type="number"
                               name="telemetryIntervalSec"
-                              min={1}
+                              min={15}
                               max={30}
                               className={inputClass}
                               value={settings.telemetryIntervalSec}
