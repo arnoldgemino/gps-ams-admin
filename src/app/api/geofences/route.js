@@ -53,7 +53,6 @@ export async function GET() {
     return jsonNoCache(items, { status: 200 });
   } catch (error) {
     console.error("GET /api/geofences error:", error);
-
     return jsonNoCache(
       { error: "Failed to fetch geofences" },
       { status: 500 }
@@ -94,6 +93,20 @@ export async function POST(req) {
     if (radiusMeters <= 0) {
       return jsonNoCache(
         { error: "radiusMeters must be greater than 0" },
+        { status: 400 }
+      );
+    }
+
+    if (centerLat < -90 || centerLat > 90) {
+      return jsonNoCache(
+        { error: "centerLat must be between -90 and 90" },
+        { status: 400 }
+      );
+    }
+
+    if (centerLng < -180 || centerLng > 180) {
+      return jsonNoCache(
+        { error: "centerLng must be between -180 and 180" },
         { status: 400 }
       );
     }
@@ -140,7 +153,6 @@ export async function POST(req) {
     );
   } catch (error) {
     console.error("POST /api/geofences error:", error);
-
     return jsonNoCache(
       { error: "Failed to create geofence" },
       { status: 500 }
