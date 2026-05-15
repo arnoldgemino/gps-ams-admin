@@ -1,51 +1,124 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+function jsonNoCache(data, init = {}) {
+  const headers = new Headers(init.headers || {});
+  headers.set("Cache-Control", "no-store, max-age=0");
+  return NextResponse.json(data, { ...init, headers });
+}
+
 export async function GET() {
   try {
-    const [parolees, officerAssignments, deviceAssignments, telemetryRows, alerts] =
-      await Promise.all([
-        prisma.parolee.findMany({
-          orderBy: { createdAt: "desc" },
-        }),
-        prisma.officerParoleeAssignment.findMany({
-          where: { status: "ACTIVE" },
-          include: { officer: true },
-          orderBy: { startAt: "desc" },
-        }),
-        prisma.deviceAssignment.findMany({
-          where: { status: "ACTIVE" },
-          include: { device: true },
-          orderBy: { startAt: "desc" },
-        }),
-        prisma.telemetry.findMany({
-          orderBy: { createdAt: "desc" },
-          take: 500,
-        }),
-        prisma.alert.findMany({
-          where: { status: "OPEN" },
-          orderBy: { createdAt: "desc" },
-        }),
-      ]);
+    const parolees = await prisma.parolee.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        paroleeNo: true,
+        fullName: true,
+        status: true,
+      },
+    });
+
+    if (!parolees.length) {
+      return jsonNoCache([], { status: 200 });
+    }
+
+    const paroleeIds = parolees.map((p) => p.id);
+
+    const officerAssignments = await prisma.officerParoleeAssignment.findMany({
+      where: {
+        status: "ACTIVE",
+        paroleeId: { in: paroleeIds },
+      },
+      orderBy: [
+        { paroleeId: "asc" },
+        { startAt: "desc" },
+      ],
+      distinct: ["paroleeId"],
+      select: {
+        paroleeId: true,
+        officerId: true,
+        officer: {
+          select: {
+            badgeId: true,
+            fullName: true,
+          },
+        },
+      },
+    });
+
+    const deviceAssignments = await prisma.deviceAssignment.findMany({
+      where: {
+        status: "ACTIVE",
+        paroleeId: { in: paroleeIds },
+      },
+      orderBy: [
+        { paroleeId: "asc" },
+        { startAt: "desc" },
+      ],
+      distinct: ["paroleeId"],
+      select: {
+        paroleeId: true,
+        deviceId: true,
+        device: {
+          select: {
+            deviceCode: true,
+          },
+        },
+      },
+    });
+
+    const telemetryRows = await prisma.telemetry.findMany({
+      where: {
+        paroleeId: { in: paroleeIds },
+      },
+      orderBy: [
+        { paroleeId: "asc" },
+        { createdAt: "desc" },
+      ],
+      distinct: ["paroleeId"],
+      select: {
+        paroleeId: true,
+        createdAt: true,
+      },
+    });
+
+    const alerts = await prisma.alert.findMany({
+      where: {
+        status: "OPEN",
+        paroleeId: { in: paroleeIds },
+      },
+      orderBy: [
+        { paroleeId: "asc" },
+        { createdAt: "desc" },
+      ],
+      distinct: ["paroleeId"],
+      select: {
+        paroleeId: true,
+      },
+    });
 
     const officerMap = new Map();
     for (const a of officerAssignments) {
-      if (!officerMap.has(a.paroleeId)) officerMap.set(a.paroleeId, a);
+      officerMap.set(a.paroleeId, a);
     }
 
     const deviceMap = new Map();
     for (const a of deviceAssignments) {
-      if (!deviceMap.has(a.paroleeId)) deviceMap.set(a.paroleeId, a);
+      deviceMap.set(a.paroleeId, a);
     }
 
     const telemetryMap = new Map();
     for (const t of telemetryRows) {
-      if (!telemetryMap.has(t.paroleeId)) telemetryMap.set(t.paroleeId, t);
+      telemetryMap.set(t.paroleeId, t);
     }
 
     const alertMap = new Map();
     for (const a of alerts) {
-      if (!alertMap.has(a.paroleeId)) alertMap.set(a.paroleeId, a);
+      alertMap.set(a.paroleeId, a);
     }
 
     const items = parolees.map((p) => {
@@ -73,20 +146,29 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json(items);
+    return jsonNoCache(items, { status: 200 });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Failed to fetch parolees" }, { status: 500 });
+    console.error("GET /api/parolees error:", error);
+    return jsonNoCache(
+      { error: "Failed to fetch parolees" },
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { paroleeNo, fullName, status = "ACTIVE" } = body;
+
+    const paroleeNo = String(body.paroleeNo || "").trim();
+    const fullName = String(body.fullName || "").trim();
+    const allowedStatuses = ["ACTIVE", "INACTIVE"];
+    const status = allowedStatuses.includes(body.status)
+      ? body.status
+      : "ACTIVE";
 
     if (!paroleeNo || !fullName) {
-      return NextResponse.json(
+      return jsonNoCache(
         { error: "paroleeNo and fullName are required" },
         { status: 400 }
       );
@@ -98,19 +180,30 @@ export async function POST(req) {
         fullName,
         status,
       },
+      select: {
+        id: true,
+        paroleeNo: true,
+        fullName: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
-    return NextResponse.json({ ok: true, data: parolee }, { status: 201 });
+    return jsonNoCache({ ok: true, data: parolee }, { status: 201 });
   } catch (error) {
-    console.error(error);
+    console.error("POST /api/parolees error:", error);
 
-    if (error.code === "P2002") {
-      return NextResponse.json(
+    if (error?.code === "P2002") {
+      return jsonNoCache(
         { error: "Duplicate paroleeNo" },
         { status: 409 }
       );
     }
 
-    return NextResponse.json({ error: "Failed to create parolee" }, { status: 500 });
+    return jsonNoCache(
+      { error: "Failed to create parolee" },
+      { status: 500 }
+    );
   }
 }

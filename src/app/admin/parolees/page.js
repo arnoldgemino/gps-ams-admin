@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
@@ -24,7 +25,16 @@ const inputClass =
 const selectClass =
   "mt-1 h-10 w-full rounded-xl border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none focus:ring-2 focus:ring-sky-300/30";
 
+function normalizeList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
 export default function AdminParoleesPage() {
+  const router = useRouter();
+
   const [rows, setRows] = useState([]);
   const [officers, setOfficers] = useState([]);
   const [devices, setDevices] = useState([]);
@@ -39,6 +49,7 @@ export default function AdminParoleesPage() {
 
   const [saving, setSaving] = useState(false);
   const [loadingView, setLoadingView] = useState(false);
+  const [loadingPage, setLoadingPage] = useState(true);
 
   const [selectedParolee, setSelectedParolee] = useState(null);
   const [selectedParoleeDetail, setSelectedParoleeDetail] = useState(null);
@@ -61,18 +72,47 @@ export default function AdminParoleesPage() {
   });
 
   useEffect(() => {
-    fetchParolees();
-    fetchOfficers();
-    fetchDevices();
+    loadPage();
   }, []);
+
+  async function loadPage() {
+    try {
+      setLoadingPage(true);
+      await Promise.all([fetchParolees(), fetchOfficers(), fetchDevices()]);
+    } finally {
+      setLoadingPage(false);
+    }
+  }
 
   async function fetchParolees() {
     try {
       const res = await fetch("/api/parolees", { cache: "no-store" });
       const data = await res.json();
-      setRows(Array.isArray(data) ? data : []);
+
+      if (!res.ok) {
+        console.error("Failed to fetch parolees", data);
+        setRows([]);
+        return;
+      }
+
+      const list = normalizeList(data).map((item) => ({
+        id: item.id,
+        paroleeNo: item.paroleeNo || "—",
+        fullName: item.fullName || item.name || "—",
+        officer: item.officer || item.currentOfficerLabel || "—",
+        officerId: item.officerId || "",
+        device: item.device || item.currentDeviceLabel || "—",
+        deviceId: item.deviceId || "",
+        ams: item.ams || "INACTIVE",
+        status: item.status || "WARNING",
+        lastSeen: item.lastSeen || "—",
+        dbStatus: item.dbStatus || item.status || "ACTIVE",
+      }));
+
+      setRows(list);
     } catch (error) {
       console.error("Failed to fetch parolees", error);
+      setRows([]);
     }
   }
 
@@ -80,9 +120,23 @@ export default function AdminParoleesPage() {
     try {
       const res = await fetch("/api/officers", { cache: "no-store" });
       const data = await res.json();
-      setOfficers(Array.isArray(data) ? data : []);
+
+      if (!res.ok) {
+        console.error("Failed to fetch officers", data);
+        setOfficers([]);
+        return;
+      }
+
+      const list = normalizeList(data).map((o) => ({
+        id: o.id,
+        badgeId: o.badgeId || "—",
+        fullName: o.fullName || o.officer || "—",
+      }));
+
+      setOfficers(list);
     } catch (error) {
       console.error("Failed to fetch officers", error);
+      setOfficers([]);
     }
   }
 
@@ -90,9 +144,23 @@ export default function AdminParoleesPage() {
     try {
       const res = await fetch("/api/devices", { cache: "no-store" });
       const data = await res.json();
-      setDevices(Array.isArray(data) ? data : []);
+
+      if (!res.ok) {
+        console.error("Failed to fetch devices", data);
+        setDevices([]);
+        return;
+      }
+
+      const list = normalizeList(data).map((d) => ({
+        id: d.id,
+        deviceCode: d.deviceCode || "—",
+        serialNumber: d.serialNumber || "—",
+      }));
+
+      setDevices(list);
     } catch (error) {
       console.error("Failed to fetch devices", error);
+      setDevices([]);
     }
   }
 
@@ -137,18 +205,24 @@ export default function AdminParoleesPage() {
     try {
       setSaving(true);
 
+      const payload = {
+        paroleeNo: form.paroleeNo.trim(),
+        fullName: form.fullName.trim(),
+        status: form.status,
+      };
+
       const res = await fetch("/api/parolees", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
 
       const result = await res.json();
 
       if (!res.ok) {
-        alert(result.error || "Failed to create parolee");
+        alert(result.error || result.message || "Failed to create parolee");
         return;
       }
 
@@ -171,6 +245,7 @@ export default function AdminParoleesPage() {
 
   async function handleOpenView(parolee) {
     setSelectedParolee(parolee);
+    setSelectedParoleeDetail(null);
     setOpenView(true);
     await fetchParoleeDetail(parolee.id);
   }
@@ -200,18 +275,24 @@ export default function AdminParoleesPage() {
     try {
       setSaving(true);
 
+      const payload = {
+        paroleeNo: editForm.paroleeNo.trim(),
+        fullName: editForm.fullName.trim(),
+        status: editForm.status,
+      };
+
       const res = await fetch(`/api/parolees/${selectedParolee.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify(payload),
       });
 
       const result = await res.json();
 
       if (!res.ok) {
-        alert(result.error || "Failed to update parolee");
+        alert(result.error || result.message || "Failed to update parolee");
         return;
       }
 
@@ -232,18 +313,23 @@ export default function AdminParoleesPage() {
     try {
       setSaving(true);
 
+      const payload = {
+        officerId: assignForm.officerId || null,
+        deviceId: assignForm.deviceId || null,
+      };
+
       const res = await fetch(`/api/parolees/${selectedParolee.id}/assign`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(assignForm),
+        body: JSON.stringify(payload),
       });
 
       const result = await res.json();
 
       if (!res.ok) {
-        alert(result.error || "Failed to save assignments");
+        alert(result.error || result.message || "Failed to save assignments");
         return;
       }
 
@@ -258,16 +344,25 @@ export default function AdminParoleesPage() {
     }
   }
 
-  const filtered = rows.filter((r) => {
-    const s = search.trim().toLowerCase();
-    const matchSearch =
-      !s ||
-      r.paroleeNo.toLowerCase().includes(s) ||
-      r.fullName.toLowerCase().includes(s);
+  function handleLogout() {
+    router.push("/login");
+  }
 
-    const matchStatus = filterStatus === "ALL" ? true : r.status === filterStatus;
-    return matchSearch && matchStatus;
-  });
+  const filtered = useMemo(() => {
+    return rows.filter((r) => {
+      const s = search.trim().toLowerCase();
+      const paroleeNo = String(r.paroleeNo || "").toLowerCase();
+      const fullName = String(r.fullName || "").toLowerCase();
+
+      const matchSearch =
+        !s || paroleeNo.includes(s) || fullName.includes(s);
+
+      const matchStatus =
+        filterStatus === "ALL" ? true : r.status === filterStatus;
+
+      return matchSearch && matchStatus;
+    });
+  }, [rows, search, filterStatus]);
 
   const totalParolees = rows.length;
   const activeAMS = rows.filter((r) => r.ams === "ACTIVE").length;
@@ -332,7 +427,9 @@ export default function AdminParoleesPage() {
                   </div>
                 </div>
 
-                <button className={`${btnDanger} mt-3 w-full`}>Logout</button>
+                <button onClick={handleLogout} className={`${btnDanger} mt-3 w-full`}>
+                  Logout
+                </button>
               </div>
             </div>
           </aside>
@@ -371,8 +468,9 @@ export default function AdminParoleesPage() {
                 </div>
 
                 <div className="flex gap-2">
-                  <button className={btnGhost}>Export</button>
-                  <button className={btnSecondary}>Bulk Actions</button>
+                  <button className={btnGhost} onClick={fetchParolees}>
+                    Refresh
+                  </button>
                 </div>
               </div>
 
@@ -438,61 +536,67 @@ export default function AdminParoleesPage() {
                   </thead>
 
                   <tbody className="divide-y divide-white/10">
-                    {filtered.map((r) => (
-                      <tr key={r.id} className="hover:bg-white/[0.03]">
-                        <td className="py-3 px-3 font-semibold text-white">{r.paroleeNo}</td>
-                        <td className="py-3 px-3 text-slate-200">{r.fullName}</td>
-                        <td className="py-3 px-3 text-slate-300">{r.officer}</td>
-                        <td className="py-3 px-3 text-slate-300">{r.device}</td>
-
-                        <td className="py-3 px-3">
-                          <Badge tone={r.ams === "ACTIVE" ? "green" : "gray"}>
-                            {r.ams}
-                          </Badge>
-                        </td>
-
-                        <td className="py-3 px-3">
-                          <Badge
-                            tone={
-                              r.status === "COMPLIANT"
-                                ? "green"
-                                : r.status === "WARNING"
-                                ? "amber"
-                                : "red"
-                            }
-                          >
-                            {r.status}
-                          </Badge>
-                        </td>
-
-                        <td className="py-3 px-3 text-slate-400">{r.lastSeen}</td>
-
-                        <td className="py-3 px-3">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              className={btnSecondary}
-                              onClick={() => handleOpenView(r)}
-                            >
-                              View
-                            </button>
-                            <button
-                              className={btnGhost}
-                              onClick={() => handleOpenEdit(r)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              className={btnGhost}
-                              onClick={() => handleOpenAssign(r)}
-                            >
-                              Assign
-                            </button>
-                          </div>
+                    {loadingPage ? (
+                      <tr>
+                        <td className="py-10 text-center text-slate-400" colSpan={8}>
+                          Loading parolees...
                         </td>
                       </tr>
-                    ))}
+                    ) : filtered.length > 0 ? (
+                      filtered.map((r) => (
+                        <tr key={r.id} className="hover:bg-white/[0.03]">
+                          <td className="py-3 px-3 font-semibold text-white">{r.paroleeNo}</td>
+                          <td className="py-3 px-3 text-slate-200">{r.fullName}</td>
+                          <td className="py-3 px-3 text-slate-300">{r.officer}</td>
+                          <td className="py-3 px-3 text-slate-300">{r.device}</td>
 
-                    {filtered.length === 0 && (
+                          <td className="py-3 px-3">
+                            <Badge tone={r.ams === "ACTIVE" ? "green" : "gray"}>
+                              {r.ams}
+                            </Badge>
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <Badge
+                              tone={
+                                r.status === "COMPLIANT"
+                                  ? "green"
+                                  : r.status === "WARNING"
+                                  ? "amber"
+                                  : "red"
+                              }
+                            >
+                              {r.status}
+                            </Badge>
+                          </td>
+
+                          <td className="py-3 px-3 text-slate-400">{r.lastSeen}</td>
+
+                          <td className="py-3 px-3">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                className={btnSecondary}
+                                onClick={() => handleOpenView(r)}
+                              >
+                                View
+                              </button>
+                              <button
+                                className={btnGhost}
+                                onClick={() => handleOpenEdit(r)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className={btnGhost}
+                                onClick={() => handleOpenAssign(r)}
+                              >
+                                Assign
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
                       <tr>
                         <td className="py-10 text-center text-slate-400" colSpan={8}>
                           No results found.
@@ -509,8 +613,12 @@ export default function AdminParoleesPage() {
                   <span className="font-semibold">{rows.length}</span>
                 </div>
                 <div className="flex gap-2">
-                  <button className={btnGhost}>Prev</button>
-                  <button className={btnGhost}>Next</button>
+                  <button className={btnGhost} disabled>
+                    Prev
+                  </button>
+                  <button className={btnGhost} disabled>
+                    Next
+                  </button>
                 </div>
               </div>
             </section>
@@ -574,9 +682,9 @@ export default function AdminParoleesPage() {
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Info label="Parolee ID" value={selectedParoleeDetail.paroleeNo} />
-                <Info label="Full Name" value={selectedParoleeDetail.fullName} />
-                <Info label="Record Status" value={selectedParoleeDetail.status} />
+                <Info label="Parolee ID" value={selectedParoleeDetail.paroleeNo || "—"} />
+                <Info label="Full Name" value={selectedParoleeDetail.fullName || "—"} />
+                <Info label="Record Status" value={selectedParoleeDetail.status || "—"} />
                 <Info
                   label="Created"
                   value={
