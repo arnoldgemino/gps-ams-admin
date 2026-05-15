@@ -559,15 +559,15 @@ export default function AdminGeofencesPage() {
               <Link href="/admin/dashboard" className={btnGhost}>
                 ← Dashboard
               </Link>
-              <button
-                onClick={async () => {
-                  await ensureParoleesLoaded(true);
-                  setOpenCreate(true);
-                }}
-                className={btnPrimary}
-              >
-                + Create Geofence
-              </button>
+             <button
+  onClick={async () => {
+    await ensureParoleesLoaded(true);
+    setOpenCreate(true);
+  }}
+  className={btnPrimary}
+>
+  + Create Geofence
+</button>
             </div>
           </div>
         </header>
