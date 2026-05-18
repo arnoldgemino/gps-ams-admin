@@ -226,8 +226,8 @@ export async function POST(req) {
         status: "ACTIVE",
       },
       orderBy: {
-        createdAt: "desc",
-      },
+  startAt: "desc",
+},
     });
 
     if (!assignment) {
@@ -264,8 +264,8 @@ export async function POST(req) {
             paroleeId,
             status: "ACTIVE",
           },
-         orderBy: {
-  startAt: "desc",
+orderBy: {
+  createdAt: "desc",
 },
         }),
       ]);
