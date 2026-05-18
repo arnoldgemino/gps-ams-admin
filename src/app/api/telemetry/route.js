@@ -75,18 +75,51 @@ async function resolveAlertsByType(tx, { paroleeId, type }) {
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
-    const paroleeId = searchParams.get("paroleeId");
+    const deviceCode = searchParams.get("deviceCode");
+    const serialNumber = searchParams.get("serialNumber");
 
-    if (!paroleeId) {
+    if (!deviceCode || !serialNumber) {
       return NextResponse.json(
-        { error: "paroleeId is required" },
+        { error: "deviceCode and serialNumber are required" },
         { status: 400 }
+      );
+    }
+
+    const device = await prisma.device.findFirst({
+      where: {
+        deviceCode,
+        serialNumber,
+      },
+    });
+
+    if (!device) {
+      return NextResponse.json(
+        { error: "Device not found", deviceCode, serialNumber },
+        { status: 404 }
+      );
+    }
+
+    const assignment = await prisma.deviceAssignment.findFirst({
+      where: {
+        deviceId: device.id,
+        status: "ACTIVE",
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    if (!assignment) {
+      return NextResponse.json(
+        { error: "No active device assignment found" },
+        { status: 404 }
       );
     }
 
     const latest = await prisma.telemetry.findFirst({
       where: {
-        paroleeId,
+        deviceId: device.id,
+        paroleeId: assignment.paroleeId,
       },
       orderBy: {
         createdAt: "desc",
@@ -127,8 +160,8 @@ export async function POST(req) {
       );
     }
 
-    const deviceId = String(body.deviceId || "").trim();
-    const paroleeId = String(body.paroleeId || "").trim();
+    const deviceCode = String(body.deviceCode || "").trim();
+    const serialNumber = String(body.serialNumber || "").trim();
 
     const lat = Number(body.lat);
     const lng = Number(body.lng);
@@ -142,8 +175,8 @@ export async function POST(req) {
     const tamperStatus = String(body.tamperStatus || "OK");
 
     if (
-      !deviceId ||
-      !paroleeId ||
+      !deviceCode ||
+      !serialNumber ||
       !Number.isFinite(lat) ||
       !Number.isFinite(lng) ||
       !Number.isFinite(batteryLevel)
@@ -157,13 +190,60 @@ export async function POST(req) {
       );
     }
 
-    const [device, parolee, settings, officerAssignment, geofences] =
+    const device = await prisma.device.findFirst({
+      where: {
+        deviceCode,
+        serialNumber,
+      },
+    });
+
+    if (!device) {
+      return NextResponse.json(
+        {
+          error: "Device not found",
+          deviceCode,
+          serialNumber,
+        },
+        { status: 404 }
+      );
+    }
+
+    const envToken = process.env.ESP32_DEVICE_TOKEN || "";
+    const tokenValid = token === envToken || token === device.apiKey;
+
+    if (!tokenValid) {
+      return NextResponse.json(
+        {
+          error: "Unauthorized",
+        },
+        { status: 401 }
+      );
+    }
+
+    const assignment = await prisma.deviceAssignment.findFirst({
+      where: {
+        deviceId: device.id,
+        status: "ACTIVE",
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    if (!assignment) {
+      return NextResponse.json(
+        {
+          error: "No active device assignment found",
+          deviceId: device.id,
+        },
+        { status: 404 }
+      );
+    }
+
+    const paroleeId = assignment.paroleeId;
+
+    const [parolee, settings, officerAssignment, geofences] =
       await Promise.all([
-        prisma.device.findUnique({
-          where: {
-            id: deviceId,
-          },
-        }),
         prisma.parolee.findUnique({
           where: {
             id: paroleeId,
@@ -190,35 +270,13 @@ export async function POST(req) {
         }),
       ]);
 
-    if (!device) {
-      return NextResponse.json(
-        {
-          error: "Device not found",
-          deviceId,
-        },
-        { status: 404 }
-      );
-    }
-
     if (!parolee) {
       return NextResponse.json(
         {
-          error: "Parolee not found",
+          error: "Parolee not found for assigned device",
           paroleeId,
         },
         { status: 404 }
-      );
-    }
-
-    const envToken = process.env.ESP32_DEVICE_TOKEN || "";
-    const tokenValid = token === envToken || token === device.apiKey;
-
-    if (!tokenValid) {
-      return NextResponse.json(
-        {
-          error: "Unauthorized",
-        },
-        { status: 401 }
       );
     }
 
@@ -228,7 +286,7 @@ export async function POST(req) {
     const telemetry = await prisma.$transaction(async (tx) => {
       const saved = await tx.telemetry.create({
         data: {
-          deviceId,
+          deviceId: device.id,
           paroleeId,
           lat,
           lng,
