@@ -264,9 +264,9 @@ export async function POST(req) {
             paroleeId,
             status: "ACTIVE",
           },
-          orderBy: {
-            createdAt: "desc",
-          },
+         orderBy: {
+  startAt: "desc",
+},
         }),
       ]);
 
