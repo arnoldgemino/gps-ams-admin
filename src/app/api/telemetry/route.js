@@ -111,8 +111,8 @@ export async function POST(req) {
       );
     }
 
-    const deviceCode = String(body.deviceCode || "").trim();
-    const serialNumber = String(body.serialNumber || "").trim();
+    const deviceCode = String(body.deviceId || "").trim();
+    const serialNumber = String(body.serialId || "").trim();
 
     const lat = Number(body.lat);
     const lng = Number(body.lng);
