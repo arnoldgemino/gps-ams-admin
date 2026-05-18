@@ -1,3 +1,6 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -30,8 +33,14 @@ function isInsideCircle(lat, lng, geofence) {
 
 async function ensureOpenAlert(tx, { paroleeId, officerId, type, details }) {
   const existing = await tx.alert.findFirst({
-    where: { paroleeId, type, status: "OPEN" },
-    orderBy: { createdAt: "desc" },
+    where: {
+      paroleeId,
+      type,
+      status: "OPEN",
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
   });
 
   if (existing) return existing;
@@ -52,7 +61,9 @@ async function resolveAlertsByType(tx, { paroleeId, type }) {
     where: {
       paroleeId,
       type,
-      status: { in: ["OPEN", "ACKNOWLEDGED"] },
+      status: {
+        in: ["OPEN", "ACKNOWLEDGED"],
+      },
     },
     data: {
       status: "RESOLVED",
@@ -74,14 +85,25 @@ export async function GET(req) {
     }
 
     const latest = await prisma.telemetry.findFirst({
-      where: { paroleeId },
-      orderBy: { createdAt: "desc" },
+      where: {
+        paroleeId,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
     });
 
     return NextResponse.json(latest || null);
   } catch (error) {
     console.error("Telemetry GET error:", error);
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
+
+    return NextResponse.json(
+      {
+        error: "Server error",
+        message: error.message,
+      },
+      { status: 500 }
+    );
   }
 }
 
@@ -97,7 +119,10 @@ export async function POST(req) {
       body = JSON.parse(raw);
     } catch {
       return NextResponse.json(
-        { error: "Invalid JSON", raw },
+        {
+          error: "Invalid JSON",
+          raw,
+        },
         { status: 400 }
       );
     }
@@ -135,10 +160,14 @@ export async function POST(req) {
     const [device, parolee, settings, officerAssignment, geofences] =
       await Promise.all([
         prisma.device.findUnique({
-          where: { id: deviceId },
+          where: {
+            id: deviceId,
+          },
         }),
         prisma.parolee.findUnique({
-          where: { id: paroleeId },
+          where: {
+            id: paroleeId,
+          },
         }),
         prisma.systemSettings.findFirst(),
         prisma.officerParoleeAssignment.findFirst({
@@ -146,27 +175,37 @@ export async function POST(req) {
             paroleeId,
             status: "ACTIVE",
           },
-          orderBy: { startAt: "desc" },
+          orderBy: {
+            startAt: "desc",
+          },
         }),
         prisma.geofence.findMany({
           where: {
             paroleeId,
             status: "ACTIVE",
           },
-          orderBy: { createdAt: "desc" },
+          orderBy: {
+            createdAt: "desc",
+          },
         }),
       ]);
 
     if (!device) {
       return NextResponse.json(
-        { error: "Device not found", deviceId },
+        {
+          error: "Device not found",
+          deviceId,
+        },
         { status: 404 }
       );
     }
 
     if (!parolee) {
       return NextResponse.json(
-        { error: "Parolee not found", paroleeId },
+        {
+          error: "Parolee not found",
+          paroleeId,
+        },
         { status: 404 }
       );
     }
@@ -175,7 +214,12 @@ export async function POST(req) {
     const tokenValid = token === envToken || token === device.apiKey;
 
     if (!tokenValid) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        {
+          error: "Unauthorized",
+        },
+        { status: 401 }
+      );
     }
 
     const officerId = officerAssignment?.officerId || null;
