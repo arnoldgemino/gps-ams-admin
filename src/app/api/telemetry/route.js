@@ -25,22 +25,13 @@ function distanceMeters(lat1, lng1, lat2, lng2) {
 }
 
 function isInsideCircle(lat, lng, geofence) {
-  return (
-    distanceMeters(lat, lng, geofence.centerLat, geofence.centerLng) <=
-    geofence.radiusMeters
-  );
+  return distanceMeters(lat, lng, geofence.centerLat, geofence.centerLng) <= geofence.radiusMeters;
 }
 
 async function ensureOpenAlert(tx, { paroleeId, officerId, type, details }) {
   const existing = await tx.alert.findFirst({
-    where: {
-      paroleeId,
-      type,
-      status: "OPEN",
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
+    where: { paroleeId, type, status: "OPEN" },
+    orderBy: { createdAt: "desc" },
   });
 
   if (existing) return existing;
@@ -61,9 +52,7 @@ async function resolveAlertsByType(tx, { paroleeId, type }) {
     where: {
       paroleeId,
       type,
-      status: {
-        in: ["OPEN", "ACKNOWLEDGED"],
-      },
+      status: { in: ["OPEN", "ACKNOWLEDGED"] },
     },
     data: {
       status: "RESOLVED",
@@ -86,10 +75,7 @@ export async function GET(req) {
     }
 
     const device = await prisma.device.findFirst({
-      where: {
-        deviceCode,
-        serialNumber,
-      },
+      where: { deviceCode, serialNumber },
     });
 
     if (!device) {
@@ -105,7 +91,7 @@ export async function GET(req) {
         status: "ACTIVE",
       },
       orderBy: {
-        createdAt: "desc",
+        startAt: "desc",
       },
     });
 
@@ -191,10 +177,7 @@ export async function POST(req) {
     }
 
     const device = await prisma.device.findFirst({
-      where: {
-        deviceCode,
-        serialNumber,
-      },
+      where: { deviceCode, serialNumber },
     });
 
     if (!device) {
@@ -212,12 +195,7 @@ export async function POST(req) {
     const tokenValid = token === envToken || token === device.apiKey;
 
     if (!tokenValid) {
-      return NextResponse.json(
-        {
-          error: "Unauthorized",
-        },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const assignment = await prisma.deviceAssignment.findFirst({
@@ -226,8 +204,8 @@ export async function POST(req) {
         status: "ACTIVE",
       },
       orderBy: {
-  startAt: "desc",
-},
+        startAt: "desc",
+      },
     });
 
     if (!assignment) {
@@ -245,9 +223,7 @@ export async function POST(req) {
     const [parolee, settings, officerAssignment, geofences] =
       await Promise.all([
         prisma.parolee.findUnique({
-          where: {
-            id: paroleeId,
-          },
+          where: { id: paroleeId },
         }),
         prisma.systemSettings.findFirst(),
         prisma.officerParoleeAssignment.findFirst({
@@ -264,9 +240,9 @@ export async function POST(req) {
             paroleeId,
             status: "ACTIVE",
           },
-orderBy: {
-  createdAt: "desc",
-},
+          orderBy: {
+            createdAt: "desc",
+          },
         }),
       ]);
 
@@ -304,10 +280,7 @@ orderBy: {
           details: "Tamper detected from device telemetry.",
         });
       } else {
-        await resolveAlertsByType(tx, {
-          paroleeId,
-          type: "TAMPER",
-        });
+        await resolveAlertsByType(tx, { paroleeId, type: "TAMPER" });
       }
 
       if (batteryLevel <= lowBatteryThreshold) {
@@ -318,10 +291,7 @@ orderBy: {
           details: `Battery level is ${batteryLevel}%. Threshold is ${lowBatteryThreshold}%.`,
         });
       } else {
-        await resolveAlertsByType(tx, {
-          paroleeId,
-          type: "LOW_BATTERY",
-        });
+        await resolveAlertsByType(tx, { paroleeId, type: "LOW_BATTERY" });
       }
 
       let geofenceProblem = "";
@@ -355,16 +325,10 @@ orderBy: {
           details: geofenceProblem,
         });
       } else {
-        await resolveAlertsByType(tx, {
-          paroleeId,
-          type: "GEOFENCE",
-        });
+        await resolveAlertsByType(tx, { paroleeId, type: "GEOFENCE" });
       }
 
-      await resolveAlertsByType(tx, {
-        paroleeId,
-        type: "OFFLINE",
-      });
+      await resolveAlertsByType(tx, { paroleeId, type: "OFFLINE" });
 
       return saved;
     });
