@@ -132,7 +132,6 @@ export async function POST(req) {
 
     const lat = Number(body.lat);
     const lng = Number(body.lng);
-    const speedKmph = Number(body.speedKmph || 0);
     const batteryLevel = Number(body.batteryLevel);
 
     const signalRssiDbm =
@@ -147,7 +146,6 @@ export async function POST(req) {
       !paroleeId ||
       !Number.isFinite(lat) ||
       !Number.isFinite(lng) ||
-      !Number.isFinite(speedKmph) ||
       !Number.isFinite(batteryLevel)
     ) {
       return NextResponse.json(
@@ -234,7 +232,6 @@ export async function POST(req) {
           paroleeId,
           lat,
           lng,
-          speedKmph,
           batteryLevel,
           signalRssiDbm,
           tamperStatus,
