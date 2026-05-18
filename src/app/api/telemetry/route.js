@@ -30,11 +30,7 @@ function isInsideCircle(lat, lng, geofence) {
 
 async function ensureOpenAlert(tx, { paroleeId, officerId, type, details }) {
   const existing = await tx.alert.findFirst({
-    where: {
-      paroleeId,
-      type,
-      status: "OPEN",
-    },
+    where: { paroleeId, type, status: "OPEN" },
     orderBy: { createdAt: "desc" },
   });
 
@@ -56,9 +52,7 @@ async function resolveAlertsByType(tx, { paroleeId, type }) {
     where: {
       paroleeId,
       type,
-      status: {
-        in: ["OPEN", "ACKNOWLEDGED"],
-      },
+      status: { in: ["OPEN", "ACKNOWLEDGED"] },
     },
     data: {
       status: "RESOLVED",
@@ -103,20 +97,17 @@ export async function POST(req) {
       body = JSON.parse(raw);
     } catch {
       return NextResponse.json(
-        {
-          error: "Invalid JSON",
-          raw,
-        },
+        { error: "Invalid JSON", raw },
         { status: 400 }
       );
     }
 
-   const deviceCode = String(body.deviceCode || "").trim();
-const serialNumber = String(body.serialNumber || "").trim();
+    const deviceId = String(body.deviceId || "").trim();
+    const paroleeId = String(body.paroleeId || "").trim();
 
-const lat = Number(body.lat);
-const lng = Number(body.lng);
-const batteryLevel = Number(body.batteryLevel);
+    const lat = Number(body.lat);
+    const lng = Number(body.lng);
+    const batteryLevel = Number(body.batteryLevel);
 
     const signalRssiDbm =
       body.signalRssiDbm === undefined || body.signalRssiDbm === null
@@ -126,7 +117,8 @@ const batteryLevel = Number(body.batteryLevel);
     const tamperStatus = String(body.tamperStatus || "OK");
 
     if (
-      (!deviceCode && !serialNumber) ||
+      !deviceId ||
+      !paroleeId ||
       !Number.isFinite(lat) ||
       !Number.isFinite(lng) ||
       !Number.isFinite(batteryLevel)
@@ -140,65 +132,11 @@ const batteryLevel = Number(body.batteryLevel);
       );
     }
 
-    const device = await prisma.device.findFirst({
-      where: {
-        OR: [
-          deviceCode ? { deviceCode } : undefined,
-          serialNumber ? { serialNumber } : undefined,
-        ].filter(Boolean),
-      },
-    });
-
-    if (!device) {
-      return NextResponse.json(
-        {
-          error: "Device not found",
-          deviceCode,
-          serialNumber,
-        },
-        { status: 404 }
-      );
-    }
-
-    const envToken = process.env.ESP32_DEVICE_TOKEN || "";
-    const tokenValid = token === envToken || token === device.apiKey;
-
-    if (!tokenValid) {
-      return NextResponse.json(
-        {
-          error: "Unauthorized",
-        },
-        { status: 401 }
-      );
-    }
-
-    const activeAssignment = await prisma.deviceParoleeAssignment.findFirst({
-      where: {
-        deviceId: device.id,
-        status: "ACTIVE",
-      },
-      orderBy: {
-        startAt: "desc",
-      },
-    });
-
-    if (!activeAssignment) {
-      return NextResponse.json(
-        {
-          error: "Device is not assigned to a parolee",
-          deviceId: device.id,
-          deviceCode: device.deviceCode,
-          serialNumber: device.serialNumber,
-        },
-        { status: 400 }
-      );
-    }
-
-    const deviceId = device.id;
-    const paroleeId = activeAssignment.paroleeId;
-
-    const [parolee, settings, officerAssignment, geofences] =
+    const [device, parolee, settings, officerAssignment, geofences] =
       await Promise.all([
+        prisma.device.findUnique({
+          where: { id: deviceId },
+        }),
         prisma.parolee.findUnique({
           where: { id: paroleeId },
         }),
@@ -219,14 +157,25 @@ const batteryLevel = Number(body.batteryLevel);
         }),
       ]);
 
-    if (!parolee) {
+    if (!device) {
       return NextResponse.json(
-        {
-          error: "Parolee not found",
-          paroleeId,
-        },
+        { error: "Device not found", deviceId },
         { status: 404 }
       );
+    }
+
+    if (!parolee) {
+      return NextResponse.json(
+        { error: "Parolee not found", paroleeId },
+        { status: 404 }
+      );
+    }
+
+    const envToken = process.env.ESP32_DEVICE_TOKEN || "";
+    const tokenValid = token === envToken || token === device.apiKey;
+
+    if (!tokenValid) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const officerId = officerAssignment?.officerId || null;
