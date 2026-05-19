@@ -10,8 +10,9 @@ function jsonNoCache(data, init = {}) {
   return NextResponse.json(data, { ...init, headers });
 }
 
-function getRouteId(req, params) {
-  const fromParams = String(params?.id || "").trim();
+async function getRouteId(req, params) {
+  const resolvedParams = await params;
+  const fromParams = String(resolvedParams?.id || "").trim();
   if (fromParams) return fromParams;
 
   try {
@@ -29,7 +30,7 @@ function getRouteId(req, params) {
 
 export async function POST(req, { params }) {
   try {
-    const deviceId = getRouteId(req, params);
+    const deviceId = await getRouteId(req, params);
 
     const body = await req.json();
     const paroleeId = String(body.paroleeId || "").trim();

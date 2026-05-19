@@ -10,9 +10,22 @@ function jsonNoCache(data, init = {}) {
   return NextResponse.json(data, { ...init, headers });
 }
 
+async function getRouteId(req, params) {
+  const resolvedParams = await params;
+  const fromParams = String(resolvedParams?.id || "").trim();
+  if (fromParams) return fromParams;
+
+  try {
+    const segments = new URL(req.url).pathname.split("/").filter(Boolean);
+    return String(segments[2] || "").trim();
+  } catch {
+    return "";
+  }
+}
+
 export async function GET(req, { params }) {
   try {
-    const { id } = params;
+    const id = await getRouteId(req, params);
 
     if (!id) {
       return jsonNoCache({ error: "Geofence ID is required" }, { status: 400 });
@@ -74,7 +87,7 @@ export async function GET(req, { params }) {
 
 export async function PUT(req, { params }) {
   try {
-    const { id } = params;
+    const id = await getRouteId(req, params);
     const body = await req.json();
 
     if (!id) {

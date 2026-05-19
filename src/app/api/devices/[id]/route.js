@@ -10,8 +10,9 @@ function jsonNoCache(data, init = {}) {
   return NextResponse.json(data, { ...init, headers });
 }
 
-function getRouteId(req, params) {
-  const fromParams = String(params?.id || "").trim();
+async function getRouteId(req, params) {
+  const resolvedParams = await params;
+  const fromParams = String(resolvedParams?.id || "").trim();
   if (fromParams) return fromParams;
 
   try {
@@ -29,7 +30,7 @@ function getRouteId(req, params) {
 
 export async function GET(req, { params }) {
   try {
-    const id = getRouteId(req, params);
+    const id = await getRouteId(req, params);
 
     if (!id) {
       return jsonNoCache({ error: "Device ID is required" }, { status: 400 });
@@ -137,7 +138,7 @@ export async function GET(req, { params }) {
 
 export async function PUT(req, { params }) {
   try {
-    const id = getRouteId(req, params);
+    const id = await getRouteId(req, params);
     const body = await req.json();
 
     if (!id) {

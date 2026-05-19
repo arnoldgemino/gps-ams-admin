@@ -11,8 +11,9 @@ function jsonNoCache(data, init = {}) {
   return NextResponse.json(data, { ...init, headers });
 }
 
-function getRouteId(req, params, paramName = "id") {
-  if (params?.[paramName]) return params[paramName];
+async function getRouteId(req, params, paramName = "id") {
+  const resolvedParams = await params;
+  if (resolvedParams?.[paramName]) return resolvedParams[paramName];
   try {
     const url = new URL(req.url);
     const segments = url.pathname.split("/").filter(Boolean);
@@ -24,7 +25,7 @@ function getRouteId(req, params, paramName = "id") {
 
 export async function GET(req, { params }) {
   try {
-    const id = getRouteId(req, params);
+    const id = await getRouteId(req, params);
 
     if (!id) {
       return jsonNoCache({ error: "Officer ID is required" }, { status: 400 });
@@ -148,7 +149,7 @@ export async function GET(req, { params }) {
 
 export async function PUT(req, { params }) {
   try {
-    const id = getRouteId(req, params);
+    const id = await getRouteId(req, params);
     const body = await req.json();
 
     if (!id) {

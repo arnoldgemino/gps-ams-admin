@@ -18,9 +18,22 @@ function getSeverity(type) {
   return "MEDIUM";
 }
 
+async function getRouteId(req, params) {
+  const resolvedParams = await params;
+  const fromParams = String(resolvedParams?.id || "").trim();
+  if (fromParams) return fromParams;
+
+  try {
+    const segments = new URL(req.url).pathname.split("/").filter(Boolean);
+    return String(segments[2] || "").trim();
+  } catch {
+    return "";
+  }
+}
+
 export async function GET(req, { params }) {
   try {
-    const { id } = params;
+    const id = await getRouteId(req, params);
 
     if (!id) {
       return jsonNoCache({ error: "Alert ID is required" }, { status: 400 });

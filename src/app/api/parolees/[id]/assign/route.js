@@ -10,9 +10,22 @@ function jsonNoCache(data, init = {}) {
   return NextResponse.json(data, { ...init, headers });
 }
 
+async function getRouteId(req, params) {
+  const resolvedParams = await params;
+  const fromParams = String(resolvedParams?.id || "").trim();
+  if (fromParams) return fromParams;
+
+  try {
+    const segments = new URL(req.url).pathname.split("/").filter(Boolean);
+    return String(segments[2] || "").trim();
+  } catch {
+    return "";
+  }
+}
+
 export async function POST(req, { params }) {
   try {
-    const { id: paroleeId } = params;
+    const paroleeId = await getRouteId(req, params);
     const body = await req.json();
     const officerId = String(body.officerId || "").trim();
     const deviceId = String(body.deviceId || "").trim();
