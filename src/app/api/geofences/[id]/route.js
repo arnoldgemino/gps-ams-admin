@@ -105,7 +105,7 @@ export async function PUT(req, { params }) {
 
     const name = String(body.name || "").trim();
     const paroleeId = String(body.paroleeId || "").trim();
-    const allowedTypes = ["INCLUSION", "EXCLUSION"];
+    const allowedTypes = ["INCLUSION"];
     const type = allowedTypes.includes(body.type) ? body.type : "";
     const allowedStatuses = ["ACTIVE", "DISABLED"];
     const status = allowedStatuses.includes(body.status) ? body.status : "ACTIVE";

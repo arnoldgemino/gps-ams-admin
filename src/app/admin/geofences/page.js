@@ -274,7 +274,7 @@ export default function AdminGeofencesPage() {
     }
   }
 
-  function useLiveLocation(mode) {
+  function applyLiveLocation(mode) {
     const paroleeId = mode === "create" ? form.paroleeId : editForm.paroleeId;
 
     if (!paroleeId) {
@@ -313,6 +313,7 @@ export default function AdminGeofencesPage() {
         },
         body: JSON.stringify({
           ...form,
+          type: "INCLUSION",
           radiusMeters: Number(form.radiusMeters),
           centerLat: Number(form.centerLat),
           centerLng: Number(form.centerLng),
@@ -384,6 +385,7 @@ export default function AdminGeofencesPage() {
         },
         body: JSON.stringify({
           ...editForm,
+          type: "INCLUSION",
           radiusMeters: Number(editForm.radiusMeters),
           centerLat: Number(editForm.centerLat),
           centerLng: Number(editForm.centerLng),
@@ -473,7 +475,6 @@ export default function AdminGeofencesPage() {
     const headers = [
       "ID",
       "Name",
-      "Type",
       "Radius",
       "Parolee",
       "Status",
@@ -485,7 +486,6 @@ export default function AdminGeofencesPage() {
       [
         g.id,
         g.name,
-        g.type,
         g.radiusMeters,
         g.paroleeLabel,
         g.status,
@@ -531,7 +531,6 @@ export default function AdminGeofencesPage() {
   const totalGeofences = rows.length;
   const activeGeofences = rows.filter((g) => g.status === "ACTIVE").length;
   const inclusionZones = rows.filter((g) => g.type === "INCLUSION").length;
-  const exclusionZones = rows.filter((g) => g.type === "EXCLUSION").length;
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-950 text-white">
@@ -609,7 +608,7 @@ export default function AdminGeofencesPage() {
           </aside>
 
           <main className="col-span-12 h-[calc(95vh-5rem)] space-y-6 overflow-y-auto pb-0.5 md:col-span-9 lg:col-span-10">
-            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <MiniCard
                 title="Total Geofences"
                 value={String(totalGeofences)}
@@ -625,11 +624,6 @@ export default function AdminGeofencesPage() {
                 value={String(inclusionZones)}
                 tone="bg-cyan-500/15 border-cyan-400/25 text-cyan-100"
               />
-              <MiniCard
-                title="Exclusion Zones"
-                value={String(exclusionZones)}
-                tone="bg-rose-500/15 border-rose-400/25 text-rose-100"
-              />
             </section>
 
             <section className={sectionCard}>
@@ -637,7 +631,7 @@ export default function AdminGeofencesPage() {
                 <div>
                   <h2 className="text-lg font-semibold text-white">Geofence Map</h2>
                   <p className="text-sm text-slate-300/75">
-                    View allowed and restricted zones together with live parolee locations.
+                    View allowed zones together with live parolee locations.
                   </p>
                 </div>
 
@@ -657,10 +651,6 @@ export default function AdminGeofencesPage() {
                 <div className="inline-flex items-center gap-2">
                   <span className="h-3 w-3 rounded-full bg-emerald-400" />
                   Inclusion Zone
-                </div>
-                <div className="inline-flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-rose-400" />
-                  Exclusion Zone
                 </div>
                 <div className="inline-flex items-center gap-2">
                   <span className="h-3 w-3 rounded-full bg-sky-400" />
@@ -687,7 +677,7 @@ export default function AdminGeofencesPage() {
                       center={[g.centerLat, g.centerLng]}
                       radius={g.radiusMeters}
                       pathOptions={{
-                        color: g.type === "EXCLUSION" ? "#fb7185" : "#34d399",
+                        color: "#34d399",
                         fillOpacity: 0.22,
                       }}
                       eventHandlers={{
@@ -736,7 +726,7 @@ export default function AdminGeofencesPage() {
                 <div>
                   <h2 className="text-lg font-semibold text-white">Geofences</h2>
                   <p className="text-sm text-slate-300/75">
-                    Manage allowed and restricted zones for parolees.
+                    Manage allowed zones for parolees.
                   </p>
                 </div>
 
@@ -760,7 +750,6 @@ export default function AdminGeofencesPage() {
                     <tr className="border-b border-white/10">
                       <th className="py-3 px-3 text-left font-medium">ID</th>
                       <th className="py-3 px-3 text-left font-medium">Name</th>
-                      <th className="py-3 px-3 text-left font-medium">Type</th>
                       <th className="py-3 px-3 text-left font-medium">Radius (m)</th>
                       <th className="py-3 px-3 text-left font-medium">Parolee</th>
                       <th className="py-3 px-3 text-left font-medium">Status</th>
@@ -778,11 +767,6 @@ export default function AdminGeofencesPage() {
                       >
                         <td className="py-3 px-3 font-semibold text-white">{g.id}</td>
                         <td className="py-3 px-3 text-slate-200">{g.name}</td>
-                        <td className="py-3 px-3">
-                          <Badge tone={g.type === "EXCLUSION" ? "red" : "green"}>
-                            {g.type}
-                          </Badge>
-                        </td>
                         <td className="py-3 px-3 text-slate-300">{g.radiusMeters}</td>
                         <td className="py-3 px-3 text-slate-300">{g.paroleeLabel}</td>
                         <td className="py-3 px-3">
@@ -816,7 +800,7 @@ export default function AdminGeofencesPage() {
 
                     {rows.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-10 text-center text-slate-400">
+                        <td colSpan={6} className="py-10 text-center text-slate-400">
                           No geofences created yet.
                         </td>
                       </tr>
@@ -878,7 +862,7 @@ export default function AdminGeofencesPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => useLiveLocation("create")}
+                  onClick={() => applyLiveLocation("create")}
                   className={btnGhost}
                 >
                   Use Live Location
@@ -887,23 +871,6 @@ export default function AdminGeofencesPage() {
               <p className="mt-2 text-xs text-slate-300/80">
                 Search a place to auto-fill Center Latitude and Center Longitude.
               </p>
-            </div>
-
-            <div>
-              <div className="text-xs text-slate-400">Type</div>
-              <select
-                name="type"
-                value={form.type}
-                onChange={handleChange}
-                className={selectClass}
-              >
-                <option value="INCLUSION" className="bg-slate-900 text-white">
-                  INCLUSION
-                </option>
-                <option value="EXCLUSION" className="bg-slate-900 text-white">
-                  EXCLUSION
-                </option>
-              </select>
             </div>
 
             <Field
@@ -951,7 +918,6 @@ export default function AdminGeofencesPage() {
               <Info label="ID" value={selectedDetail.id} />
               <Info label="Name" value={selectedDetail.name} />
               <Info label="Parolee" value={selectedDetail.paroleeLabel} />
-              <Info label="Type" value={selectedDetail.type} />
               <Info label="Radius" value={`${selectedDetail.radiusMeters} meters`} />
               <Info label="Status" value={selectedDetail.status} />
               <Info label="Latitude" value={selectedDetail.centerLat} />
@@ -1010,7 +976,7 @@ export default function AdminGeofencesPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => useLiveLocation("edit")}
+                  onClick={() => applyLiveLocation("edit")}
                   className={btnGhost}
                 >
                   Use Live Location
@@ -1019,23 +985,6 @@ export default function AdminGeofencesPage() {
               <p className="mt-2 text-xs text-slate-300/80">
                 Search a place to auto-fill Center Latitude and Center Longitude.
               </p>
-            </div>
-
-            <div>
-              <div className="text-xs text-slate-400">Type</div>
-              <select
-                name="type"
-                value={editForm.type}
-                onChange={handleEditChange}
-                className={selectClass}
-              >
-                <option value="INCLUSION" className="bg-slate-900 text-white">
-                  INCLUSION
-                </option>
-                <option value="EXCLUSION" className="bg-slate-900 text-white">
-                  EXCLUSION
-                </option>
-              </select>
             </div>
 
             <Field

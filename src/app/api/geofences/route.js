@@ -17,6 +17,7 @@ function jsonNoCache(data, init = {}) {
 export async function GET() {
   try {
     const geofences = await prisma.geofence.findMany({
+      where: { type: "INCLUSION" },
       orderBy: { createdAt: "desc" },
       include: {
         parolee: {
@@ -64,7 +65,7 @@ export async function POST(req) {
 
     const name = String(body.name || "").trim();
     const paroleeId = String(body.paroleeId || "").trim();
-    const type = String(body.type || "").trim();
+    const type = "INCLUSION";
 
     const radiusMeters = Number(body.radiusMeters);
     const centerLat = Number(body.centerLat);
@@ -76,10 +77,6 @@ export async function POST(req) {
 
     if (!paroleeId) {
       return jsonNoCache({ error: "Parolee is required" }, { status: 400 });
-    }
-
-    if (!["INCLUSION", "EXCLUSION"].includes(type)) {
-      return jsonNoCache({ error: "Invalid geofence type" }, { status: 400 });
     }
 
     if (!Number.isFinite(radiusMeters) || radiusMeters <= 0) {
