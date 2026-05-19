@@ -226,6 +226,14 @@ export default function AdminAlertsPage() {
     }
   }
 
+  async function handleRefresh() {
+    await fetchAlerts(true);
+
+    if (openView && selectedAlert?.id) {
+      await fetchAlertDetail(selectedAlert.id, false);
+    }
+  }
+
   function handleExport() {
     const headers = [
       "Alert ID",
@@ -398,8 +406,12 @@ export default function AdminAlertsPage() {
                 </div>
 
                 <div className="flex gap-2">
-                  <button className={btnGhost} onClick={() => fetchAlerts(true)}>
-                    Refresh
+                  <button
+                    className={btnGhost}
+                    onClick={handleRefresh}
+                    disabled={loading || acknowledging}
+                  >
+                    {loading ? "Refreshing..." : "Refresh"}
                   </button>
                   <button className={btnGhost} onClick={handleExport}>
                     Export

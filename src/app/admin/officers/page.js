@@ -341,6 +341,14 @@ export default function AdminOfficersPage() {
     }
   }
 
+  async function handleRefresh() {
+    await loadPage();
+
+    if (openView && selectedOfficer?.id) {
+      await fetchOfficerDetail(selectedOfficer.id);
+    }
+  }
+
   function handleLogout() {
     router.push("/login");
   }
@@ -462,8 +470,12 @@ export default function AdminOfficersPage() {
                 </div>
 
                 <div className="flex gap-2">
-                  <button className={btnGhost} onClick={fetchOfficers}>
-                    Refresh
+                  <button
+                    className={btnGhost}
+                    onClick={handleRefresh}
+                    disabled={loadingPage || loadingView}
+                  >
+                    {loadingPage ? "Refreshing..." : "Refresh"}
                   </button>
                 </div>
               </div>

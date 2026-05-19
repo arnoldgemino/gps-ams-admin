@@ -428,6 +428,14 @@ export default function AdminDevicesPage() {
     }
   }
 
+  async function handleRefresh() {
+    await loadPage();
+
+    if (openView && selectedDevice?.id) {
+      await fetchDeviceDetail(selectedDevice.id);
+    }
+  }
+
   function handleLogout() {
     router.push("/login");
   }
@@ -553,8 +561,12 @@ export default function AdminDevicesPage() {
                 </div>
 
                 <div className="flex gap-2">
-                  <button className={btnGhost} onClick={fetchDevices}>
-                    Refresh
+                  <button
+                    className={btnGhost}
+                    onClick={handleRefresh}
+                    disabled={loadingPage || loadingView}
+                  >
+                    {loadingPage ? "Refreshing..." : "Refresh"}
                   </button>
                 </div>
               </div>
