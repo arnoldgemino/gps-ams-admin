@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { runOfflineAlertCheck } from "@/lib/offline-alerts";
 
 function jsonNoCache(data, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -39,6 +40,8 @@ function normalizeTake(value) {
 
 export async function GET(req, { params }) {
   try {
+    await runOfflineAlertCheck();
+
     const officerId = await getOfficerId(req, params);
 
     if (!officerId) {

@@ -3,6 +3,7 @@
 #include <ArduinoHttpClient.h>
 #include <TinyGPSPlus.h>
 #include <HardwareSerial.h>
+#include <esp_sleep.h>
 
 // =========================
 // WIFI SETTINGS
@@ -71,7 +72,12 @@ WiFiClientSecure wifiClient;
 HttpClient http(wifiClient, serverHost, serverPort);
 
 unsigned long lastSend = 0;
-const unsigned long sendIntervalMs = 10000;
+// Telemetry send interval. Recommended range: 30000 to 60000 ms.
+const unsigned long sendIntervalMs = 30000;
+
+// Saves power between telemetry sends. Light sleep keeps RAM/state but pauses the CPU.
+const bool sleepModeEnabled = true;
+const unsigned long maxSleepIntervalMs = 60000;
 
 String currentGeofenceAlertId = "";
 int geofenceWarningCount = 0;
@@ -85,6 +91,30 @@ struct TelemetryResult {
 
 void printDivider() {
   Serial.println("==============================");
+}
+
+void enterSleepMode() {
+  if (!sleepModeEnabled) return;
+
+  unsigned long sleepMs = sendIntervalMs;
+  if (sleepMs > maxSleepIntervalMs) {
+    sleepMs = maxSleepIntervalMs;
+  }
+
+  Serial.print("Sleep mode: ON. Sleeping for ");
+  Serial.print(sleepMs / 1000);
+  Serial.println(" seconds...");
+  Serial.flush();
+
+  WiFi.disconnect(false);
+  WiFi.mode(WIFI_OFF);
+
+  esp_sleep_enable_timer_wakeup(sleepMs * 1000ULL);
+  esp_light_sleep_start();
+
+  Serial.println("Woke up from sleep.");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
 }
 
 String jsonEscape(String value) {
@@ -534,4 +564,5 @@ void loop() {
   }
 
   printDivider();
+  enterSleepMode();
 }

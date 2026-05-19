@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { runOfflineAlertCheck } from "@/lib/offline-alerts";
 
 function jsonNoCache(data, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -20,6 +21,8 @@ function getSeverity(type) {
 
 export async function GET() {
   try {
+    await runOfflineAlertCheck();
+
     const alerts = await prisma.alert.findMany({
       orderBy: { createdAt: "desc" },
       select: {

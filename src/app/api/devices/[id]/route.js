@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getOfflineThresholdSec } from "@/lib/offline-alerts";
 
 function jsonNoCache(data, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -42,8 +43,8 @@ export async function GET(req, { params }) {
       },
     });
 
-    const telemetryIntervalSec = settings?.telemetryIntervalSec ?? 10;
-    const offlineThresholdSec = Math.max(telemetryIntervalSec * 6, 60);
+    const telemetryIntervalSec = settings?.telemetryIntervalSec ?? 30;
+    const offlineThresholdSec = getOfflineThresholdSec(telemetryIntervalSec);
     const cutoff = new Date(Date.now() - offlineThresholdSec * 1000);
 
     const device = await prisma.device.findUnique({
