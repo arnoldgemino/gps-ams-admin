@@ -178,6 +178,16 @@ export async function POST(req) {
           orderBy: {
             startAt: "desc",
           },
+          select: {
+            officerId: true,
+            officer: {
+              select: {
+                badgeId: true,
+                fullName: true,
+                phone: true,
+              },
+            },
+          },
         }),
         prisma.geofence.findMany({
           where: {
@@ -223,7 +233,20 @@ export async function POST(req) {
     }
 
     const officerId = officerAssignment?.officerId || null;
+    const officer = officerAssignment?.officer || null;
     const lowBatteryThreshold = settings?.lowBatteryThreshold ?? 20;
+    let deviceAction = {
+      geofenceBreach: false,
+      geofenceDetails: "",
+      geofenceAlertId: "",
+      officerId,
+      officerName: officer?.fullName || "",
+      officerPhone: officer?.phone || "",
+      paroleeLabel: parolee.fullName || paroleeId,
+      warningLimit: 3,
+      callOfficer: false,
+      smsMessage: "",
+    };
 
     const telemetry = await prisma.$transaction(async (tx) => {
       const saved = await tx.telemetry.create({
@@ -290,17 +313,42 @@ export async function POST(req) {
       }
 
       if (geofenceProblem) {
-        await ensureOpenAlert(tx, {
+        const geofenceAlert = await ensureOpenAlert(tx, {
           paroleeId,
           officerId,
           type: "GEOFENCE",
           details: geofenceProblem,
         });
+
+        const paroleeLabel = parolee.fullName || paroleeId;
+        const officerPhone = officer?.phone || "";
+
+        deviceAction = {
+          geofenceBreach: true,
+          geofenceDetails: geofenceProblem,
+          geofenceAlertId: geofenceAlert.id,
+          officerId,
+          officerName: officer?.fullName || "",
+          officerPhone,
+          paroleeLabel,
+          warningLimit: 3,
+          callOfficer: Boolean(officerPhone),
+          smsMessage: `GPS-AMS ALERT: ${paroleeLabel} breached geofence. ${geofenceProblem} Location: ${lat.toFixed(6)}, ${lng.toFixed(6)}.`,
+        };
       } else {
         await resolveAlertsByType(tx, {
           paroleeId,
           type: "GEOFENCE",
         });
+
+        deviceAction = {
+          ...deviceAction,
+          geofenceBreach: false,
+          geofenceDetails: "",
+          geofenceAlertId: "",
+          callOfficer: false,
+          smsMessage: "",
+        };
       }
 
       await resolveAlertsByType(tx, {
@@ -315,6 +363,8 @@ export async function POST(req) {
       {
         ok: true,
         data: telemetry,
+        deviceAction,
+        serverTime: new Date().toISOString(),
       },
       { status: 201 }
     );
