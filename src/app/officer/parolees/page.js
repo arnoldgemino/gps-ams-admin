@@ -137,6 +137,7 @@ export default function OfficerParoleesPage() {
               <nav className="flex-1 space-y-2 overflow-y-auto p-4">
                 <SideLink label="Dashboard" href="/officer/dashboard" />
                 <SideLink active label="My Parolees" href="/officer/parolees" />
+                <SideLink label="Map" href="/officer/map" />
                 <SideLink label="Alerts" href="/officer/alerts" />
                 <SideLink label="Profile" href="/officer/profile" />
               </nav>
@@ -211,7 +212,7 @@ export default function OfficerParoleesPage() {
                 </div>
                 <div className="flex gap-2">
                   <button className={btnGhost}>Export</button>
-                  <Link href="/officer/dashboard" className={btnSecondary}>
+                  <Link href="/officer/map" className={btnSecondary}>
                     Live Map
                   </Link>
                 </div>

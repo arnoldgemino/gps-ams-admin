@@ -208,6 +208,7 @@ export default function OfficerAlertsPage() {
               <nav className="flex-1 space-y-2 overflow-y-auto p-4">
                 <SideLink label="Dashboard" href="/officer/dashboard" />
                 <SideLink label="My Parolees" href="/officer/parolees" />
+                <SideLink label="Map" href="/officer/map" />
                 <SideLink active label="Alerts" href="/officer/alerts" />
                 <SideLink label="Profile" href="/officer/profile" />
               </nav>

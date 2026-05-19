@@ -239,6 +239,7 @@ export default function OfficerDashboardPage() {
               <nav className="flex-1 space-y-2 overflow-y-auto p-4">
                 <SideLink active label="Dashboard" href="/officer/dashboard" />
                 <SideLink label="My Parolees" href="/officer/parolees" />
+                <SideLink label="Map" href="/officer/map" />
                 <SideLink label="Alerts" href="/officer/alerts" />
                 <SideLink label="Profile" href="/officer/profile" />
               </nav>
@@ -511,6 +512,7 @@ export default function OfficerDashboardPage() {
           <div className="mx-auto flex max-w-7xl items-center justify-between px-4">
             <BottomNavLink href="/officer/dashboard" label="Dashboard" active />
             <BottomNavLink href="/officer/parolees" label="Parolees" />
+            <BottomNavLink href="/officer/map" label="Map" />
             <BottomNavLink href="/officer/alerts" label="Alerts" />
             <BottomNavLink href="/officer/profile" label="Profile" />
           </div>
