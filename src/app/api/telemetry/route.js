@@ -25,13 +25,22 @@ function distanceMeters(lat1, lng1, lat2, lng2) {
 }
 
 function isInsideCircle(lat, lng, geofence) {
-  return distanceMeters(lat, lng, geofence.centerLat, geofence.centerLng) <= geofence.radiusMeters;
+  return (
+    distanceMeters(lat, lng, geofence.centerLat, geofence.centerLng) <=
+    geofence.radiusMeters
+  );
 }
 
 async function ensureOpenAlert(tx, { paroleeId, officerId, type, details }) {
   const existing = await tx.alert.findFirst({
-    where: { paroleeId, type, status: "OPEN" },
-    orderBy: { createdAt: "desc" },
+    where: {
+      paroleeId,
+      type,
+      status: "OPEN",
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
   });
 
   if (existing) return existing;
@@ -52,7 +61,9 @@ async function resolveAlertsByType(tx, { paroleeId, type }) {
     where: {
       paroleeId,
       type,
-      status: { in: ["OPEN", "ACKNOWLEDGED"] },
+      status: {
+        in: ["OPEN", "ACKNOWLEDGED"],
+      },
     },
     data: {
       status: "RESOLVED",
@@ -64,48 +75,18 @@ async function resolveAlertsByType(tx, { paroleeId, type }) {
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
-    const deviceCode = searchParams.get("deviceCode");
-    const serialNumber = searchParams.get("serialNumber");
+    const paroleeId = searchParams.get("paroleeId");
 
-    if (!deviceCode || !serialNumber) {
+    if (!paroleeId) {
       return NextResponse.json(
-        { error: "deviceCode and serialNumber are required" },
+        { error: "paroleeId is required" },
         { status: 400 }
-      );
-    }
-
-    const device = await prisma.device.findFirst({
-      where: { deviceCode, serialNumber },
-    });
-
-    if (!device) {
-      return NextResponse.json(
-        { error: "Device not found", deviceCode, serialNumber },
-        { status: 404 }
-      );
-    }
-
-    const assignment = await prisma.deviceAssignment.findFirst({
-      where: {
-        deviceId: device.id,
-        status: "ACTIVE",
-      },
-      orderBy: {
-        startAt: "desc",
-      },
-    });
-
-    if (!assignment) {
-      return NextResponse.json(
-        { error: "No active device assignment found" },
-        { status: 404 }
       );
     }
 
     const latest = await prisma.telemetry.findFirst({
       where: {
-        deviceId: device.id,
-        paroleeId: assignment.paroleeId,
+        paroleeId,
       },
       orderBy: {
         createdAt: "desc",
@@ -146,8 +127,8 @@ export async function POST(req) {
       );
     }
 
-    const deviceCode = String(body.deviceCode || "").trim();
-    const serialNumber = String(body.serialNumber || "").trim();
+    const deviceId = String(body.deviceId || "").trim();
+    const paroleeId = String(body.paroleeId || "").trim();
 
     const lat = Number(body.lat);
     const lng = Number(body.lng);
@@ -161,8 +142,8 @@ export async function POST(req) {
     const tamperStatus = String(body.tamperStatus || "OK");
 
     if (
-      !deviceCode ||
-      !serialNumber ||
+      !deviceId ||
+      !paroleeId ||
       !Number.isFinite(lat) ||
       !Number.isFinite(lng) ||
       !Number.isFinite(batteryLevel)
@@ -176,54 +157,17 @@ export async function POST(req) {
       );
     }
 
-    const device = await prisma.device.findFirst({
-      where: { deviceCode, serialNumber },
-    });
-
-    if (!device) {
-      return NextResponse.json(
-        {
-          error: "Device not found",
-          deviceCode,
-          serialNumber,
-        },
-        { status: 404 }
-      );
-    }
-
-    const envToken = process.env.ESP32_DEVICE_TOKEN || "";
-    const tokenValid = token === envToken || token === device.apiKey;
-
-    if (!tokenValid) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const assignment = await prisma.deviceAssignment.findFirst({
-      where: {
-        deviceId: device.id,
-        status: "ACTIVE",
-      },
-      orderBy: {
-        startAt: "desc",
-      },
-    });
-
-    if (!assignment) {
-      return NextResponse.json(
-        {
-          error: "No active device assignment found",
-          deviceId: device.id,
-        },
-        { status: 404 }
-      );
-    }
-
-    const paroleeId = assignment.paroleeId;
-
-    const [parolee, settings, officerAssignment, geofences] =
+    const [device, parolee, settings, officerAssignment, geofences] =
       await Promise.all([
+        prisma.device.findUnique({
+          where: {
+            id: deviceId,
+          },
+        }),
         prisma.parolee.findUnique({
-          where: { id: paroleeId },
+          where: {
+            id: paroleeId,
+          },
         }),
         prisma.systemSettings.findFirst(),
         prisma.officerParoleeAssignment.findFirst({
@@ -246,13 +190,35 @@ export async function POST(req) {
         }),
       ]);
 
+    if (!device) {
+      return NextResponse.json(
+        {
+          error: "Device not found",
+          deviceId,
+        },
+        { status: 404 }
+      );
+    }
+
     if (!parolee) {
       return NextResponse.json(
         {
-          error: "Parolee not found for assigned device",
+          error: "Parolee not found",
           paroleeId,
         },
         { status: 404 }
+      );
+    }
+
+    const envToken = process.env.ESP32_DEVICE_TOKEN || "";
+    const tokenValid = token === envToken || token === device.apiKey;
+
+    if (!tokenValid) {
+      return NextResponse.json(
+        {
+          error: "Unauthorized",
+        },
+        { status: 401 }
       );
     }
 
@@ -262,7 +228,7 @@ export async function POST(req) {
     const telemetry = await prisma.$transaction(async (tx) => {
       const saved = await tx.telemetry.create({
         data: {
-          deviceId: device.id,
+          deviceId,
           paroleeId,
           lat,
           lng,
@@ -280,7 +246,10 @@ export async function POST(req) {
           details: "Tamper detected from device telemetry.",
         });
       } else {
-        await resolveAlertsByType(tx, { paroleeId, type: "TAMPER" });
+        await resolveAlertsByType(tx, {
+          paroleeId,
+          type: "TAMPER",
+        });
       }
 
       if (batteryLevel <= lowBatteryThreshold) {
@@ -291,7 +260,10 @@ export async function POST(req) {
           details: `Battery level is ${batteryLevel}%. Threshold is ${lowBatteryThreshold}%.`,
         });
       } else {
-        await resolveAlertsByType(tx, { paroleeId, type: "LOW_BATTERY" });
+        await resolveAlertsByType(tx, {
+          paroleeId,
+          type: "LOW_BATTERY",
+        });
       }
 
       let geofenceProblem = "";
@@ -325,10 +297,16 @@ export async function POST(req) {
           details: geofenceProblem,
         });
       } else {
-        await resolveAlertsByType(tx, { paroleeId, type: "GEOFENCE" });
+        await resolveAlertsByType(tx, {
+          paroleeId,
+          type: "GEOFENCE",
+        });
       }
 
-      await resolveAlertsByType(tx, { paroleeId, type: "OFFLINE" });
+      await resolveAlertsByType(tx, {
+        paroleeId,
+        type: "OFFLINE",
+      });
 
       return saved;
     });
