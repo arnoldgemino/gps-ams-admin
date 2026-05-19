@@ -37,6 +37,13 @@ const btnGhost =
 const btnDanger =
   "inline-flex items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/15 px-4 py-2 text-sm font-medium text-rose-100 transition hover:bg-rose-500/25 active:scale-[0.99]";
 
+function normalizeList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
 export default function OfficerDashboardPage() {
   const router = useRouter();
   const center = useMemo(() => ({ lat: 7.9064, lng: 125.0942 }), []);
@@ -44,26 +51,23 @@ export default function OfficerDashboardPage() {
   const [officerName, setOfficerName] = useState("Officer");
   const [officerId, setOfficerId] = useState("");
   const [assigned, setAssigned] = useState([]);
-  const [alerts, setAlerts] = useState([
-    {
-      id: "AL-001",
-      type: "GEOFENCE",
-      paroleeId: "PAR-102",
-      severity: "HIGH",
-      time: "—",
-      status: "ACTIVE",
-    },
-    {
-      id: "AL-002",
-      type: "LOW_BATTERY",
-      paroleeId: "PAR-101",
-      severity: "MEDIUM",
-      time: "—",
-      status: "ACKNOWLEDGED",
-    },
-  ]);
+  const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [workingAlertId, setWorkingAlertId] = useState("");
   const [error, setError] = useState("");
+
+  async function fetchOfficerAlerts(id, take = 5) {
+    const res = await fetch(`/api/officers/${id}/alerts?take=${take}`, {
+      cache: "no-store",
+    });
+    const data = await res.json().catch(() => []);
+
+    if (!res.ok) {
+      throw new Error(data.error || "Unable to load officer alerts");
+    }
+
+    return normalizeList(data);
+  }
 
   useEffect(() => {
     const id = typeof window !== "undefined" ? localStorage.getItem("officerId") : null;
@@ -92,22 +96,32 @@ export default function OfficerDashboardPage() {
         localStorage.setItem("officerEmail", data.email || "");
         localStorage.setItem("officerBadgeId", data.badgeId || "");
         setAssigned(
-          (data.assignedParolees || []).map((item, index) => ({
+          (data.assignedParolees || []).map((item) => ({
             id: item.id,
-            name: item.fullName || "—",
-            deviceId: "—",
-            battery: "—",
-            signal: "—",
-            tamper: "—",
-            lastLat: center.lat + (index + 1) * 0.003,
-            lastLng: center.lng + (index + 1) * 0.0025,
-            lastSeen: item.startAt ? new Date(item.startAt).toLocaleString() : "—",
-            status: "ASSIGNED",
+            name: item.fullName || "-",
+            paroleeNo: item.paroleeNo || "-",
+            deviceId: item.deviceId || "-",
+            battery: item.batteryLevel ?? "-",
+            signal: item.signal || "-",
+            tamper: item.tamper || "OK",
+            lastLat: Number.isFinite(Number(item.lat)) ? Number(item.lat) : null,
+            lastLng: Number.isFinite(Number(item.lng)) ? Number(item.lng) : null,
+            lastSeen: item.lastSeen
+              ? new Date(item.lastSeen).toLocaleString()
+              : item.startAt
+              ? new Date(item.startAt).toLocaleString()
+              : "-",
+            status: item.status || "ASSIGNED",
           }))
         );
+
+        const officerAlerts = await fetchOfficerAlerts(id, 5);
+        setAlerts(officerAlerts);
       } catch (err) {
         console.error(err);
-        setError("Unable to load officer details");
+        setError(err.message || "Unable to load officer details");
+        setAssigned([]);
+        setAlerts([]);
       } finally {
         setLoading(false);
       }
@@ -115,6 +129,50 @@ export default function OfficerDashboardPage() {
 
     loadOfficer();
   }, [router]);
+
+  async function handleAlertAction(alertId, action) {
+    if (!officerId || !alertId) return;
+
+    try {
+      setWorkingAlertId(`${action}:${alertId}`);
+
+      const res = await fetch(
+        `/api/officers/${officerId}/alerts/${alertId}/${action}`,
+        { method: "POST" }
+      );
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        alert(data.error || `Failed to ${action} alert`);
+        return;
+      }
+
+      const officerAlerts = await fetchOfficerAlerts(officerId, 5);
+      setAlerts(officerAlerts);
+    } catch (err) {
+      console.error(err);
+      alert(`Failed to ${action} alert`);
+    } finally {
+      setWorkingAlertId("");
+    }
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("role");
+    localStorage.removeItem("officerId");
+    localStorage.removeItem("officerName");
+    localStorage.removeItem("officerEmail");
+    localStorage.removeItem("officerBadgeId");
+    router.push("/officer/login");
+  }
+
+  const assignedWithLocation = useMemo(
+    () =>
+      assigned.filter(
+        (p) => Number.isFinite(Number(p.lastLat)) && Number.isFinite(Number(p.lastLng))
+      ),
+    [assigned]
+  );
 
   const stats = useMemo(
     () => [
@@ -125,17 +183,19 @@ export default function OfficerDashboardPage() {
       },
       {
         label: "Active Alerts",
-        value: alerts.filter((a) => a.status === "ACTIVE").length,
+        value: alerts.filter((a) => a.status === "OPEN").length,
         tone: "bg-rose-500/15 border-rose-400/25 text-rose-100",
       },
       {
         label: "Tamper Alerts",
-        value: "—",
+        value: alerts.filter((a) => a.status === "OPEN" && a.type === "TAMPER")
+          .length,
         tone: "bg-amber-400/15 border-amber-300/25 text-amber-100",
       },
       {
         label: "Geofence Breaches",
-        value: "—",
+        value: alerts.filter((a) => a.status === "OPEN" && a.type === "GEOFENCE")
+          .length,
         tone: "bg-white/[0.08] border-white/10 text-slate-200",
       },
     ],
@@ -166,7 +226,9 @@ export default function OfficerDashboardPage() {
             </div>
 
             <div className="flex items-center gap-3">
-              <button className={btnGhost}>Realtime View</button>
+              <button className={btnGhost} onClick={() => router.push("/officer/map")}>
+                Realtime View
+              </button>
             </div>
           </div>
         </header>
@@ -196,14 +258,26 @@ export default function OfficerDashboardPage() {
                   </div>
                 </div>
 
-                <Link href="/login" className={`${btnDanger} mt-3 w-full`}>
+                <button onClick={handleLogout} className={`${btnDanger} mt-3 w-full`}>
                   Logout
-                </Link>
+                </button>
               </div>
             </div>
           </aside>
 
           <main className="col-span-12 h-[calc(95vh-5rem)] space-y-6 overflow-y-auto pb-0.5 md:col-span-9 lg:col-span-10">
+            {error && (
+              <div className="rounded-[28px] border border-rose-400/20 bg-rose-500/10 p-4 text-sm text-rose-100">
+                {error}
+              </div>
+            )}
+
+            {loading && (
+              <div className="rounded-[28px] border border-white/10 bg-black/20 p-4 text-center text-sm text-slate-300">
+                Loading dashboard...
+              </div>
+            )}
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {stats.map((s) => (
                 <div
@@ -241,11 +315,11 @@ export default function OfficerDashboardPage() {
                     style={{ height: "100%", width: "100%" }}
                   >
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                    {assigned.map((p) => (
+                    {assignedWithLocation.map((p) => (
                       <Marker key={p.id} position={[p.lastLat, p.lastLng]}>
                         <Popup>
                           <div className="text-sm">
-                            <div className="font-semibold">{p.id}</div>
+                            <div className="font-semibold">{p.name}</div>
                             <div>Device: {p.deviceId}</div>
                             <div>Status: {p.status}</div>
                           </div>
@@ -286,7 +360,7 @@ export default function OfficerDashboardPage() {
                         <div className="text-sm font-semibold text-white">
                           {a.type}
                         </div>
-                        <Badge tone={a.severity === "HIGH" ? "amber" : "gray"}>
+                        <Badge tone={severityTone(a.severity)}>
                           {a.severity}
                         </Badge>
                       </div>
@@ -294,7 +368,7 @@ export default function OfficerDashboardPage() {
                       <div className="mt-1 text-sm text-slate-300">
                         Parolee:{" "}
                         <span className="font-semibold text-white">
-                          {a.paroleeId}
+                          {a.paroleeLabel || a.paroleeId}
                         </span>
                       </div>
                       <div className="mt-1 text-xs text-slate-400">
@@ -302,12 +376,35 @@ export default function OfficerDashboardPage() {
                       </div>
 
                       <div className="mt-3 flex gap-2">
-                        <button className={`${btnGhost} flex-1 justify-center`}>
-                          Acknowledge
-                        </button>
-                        <button className={`${btnPrimary} flex-1 justify-center`}>
-                          Resolve
-                        </button>
+                        {a.status === "OPEN" ? (
+                          <>
+                            <button
+                              className={`${btnGhost} flex-1 justify-center`}
+                              disabled={Boolean(workingAlertId)}
+                              onClick={() => handleAlertAction(a.id, "acknowledge")}
+                            >
+                              {workingAlertId === `acknowledge:${a.id}`
+                                ? "Working..."
+                                : "Acknowledge"}
+                            </button>
+                            <button
+                              className={`${btnPrimary} flex-1 justify-center`}
+                              disabled={Boolean(workingAlertId)}
+                              onClick={() => handleAlertAction(a.id, "resolve")}
+                            >
+                              {workingAlertId === `resolve:${a.id}`
+                                ? "Working..."
+                                : "Resolve"}
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-xs text-slate-400">
+                            Status:{" "}
+                            <span className="font-semibold text-white">
+                              {a.status}
+                            </span>
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -355,7 +452,7 @@ export default function OfficerDashboardPage() {
                     {assigned.map((p) => (
                       <tr key={p.id} className="hover:bg-white/[0.03]">
                         <td className="py-3 px-3 font-semibold text-white">
-                          {p.id}
+                          {p.paroleeNo} - {p.name}
                         </td>
                         <td className="py-3 px-3 text-slate-300">{p.deviceId}</td>
                         <td className="py-3 px-3 text-slate-300">{p.battery}</td>
@@ -377,8 +474,18 @@ export default function OfficerDashboardPage() {
                         </td>
                         <td className="py-3 px-3">
                           <div className="flex justify-end gap-2">
-                            <button className={btnSecondary}>View</button>
-                            <button className={btnGhost}>History</button>
+                            <button
+                              className={btnSecondary}
+                              onClick={() => router.push("/officer/parolees")}
+                            >
+                              View
+                            </button>
+                            <button
+                              className={btnGhost}
+                              onClick={() => router.push("/officer/alerts")}
+                            >
+                              History
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -462,4 +569,10 @@ function Badge({ tone, children }) {
       {children}
     </span>
   );
+}
+
+function severityTone(severity) {
+  if (severity === "CRITICAL") return "red";
+  if (severity === "HIGH") return "amber";
+  return "gray";
 }

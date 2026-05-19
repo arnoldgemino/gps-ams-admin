@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -8,30 +8,63 @@ const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
 
 const btnPrimary =
-  "inline-flex items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-slate-100 active:scale-[0.99]";
+  "inline-flex items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-slate-100 active:scale-[0.99] disabled:opacity-60";
 
 const btnSecondary =
-  "inline-flex items-center justify-center rounded-xl border border-sky-400/30 bg-sky-500/15 px-4 py-2 text-sm font-medium text-sky-100 transition hover:bg-sky-500/25 active:scale-[0.99]";
+  "inline-flex items-center justify-center rounded-xl border border-sky-400/30 bg-sky-500/15 px-4 py-2 text-sm font-medium text-sky-100 transition hover:bg-sky-500/25 active:scale-[0.99] disabled:opacity-60";
 
 const btnGhost =
-  "inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-medium text-white transition hover:bg-white/[0.10] active:scale-[0.99]";
+  "inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-medium text-white transition hover:bg-white/[0.10] active:scale-[0.99] disabled:opacity-60";
 
 const btnDanger =
-  "inline-flex items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/15 px-4 py-2 text-sm font-medium text-rose-100 transition hover:bg-rose-500/25 active:scale-[0.99]";
+  "inline-flex items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/15 px-4 py-2 text-sm font-medium text-rose-100 transition hover:bg-rose-500/25 active:scale-[0.99] disabled:opacity-60";
 
 const selectClass =
   "mt-1 h-10 w-full rounded-xl border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none focus:ring-2 focus:ring-sky-300/30";
+
+function normalizeList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
 
 export default function OfficerAlertsPage() {
   const router = useRouter();
   const [officerId, setOfficerId] = useState("");
   const [officerName, setOfficerName] = useState("Officer");
   const [alerts, setAlerts] = useState([]);
-  const [assignedParoleeIds, setAssignedParoleeIds] = useState([]);
   const [filterStatus, setFilterStatus] = useState("ALL");
   const [filterSeverity, setFilterSeverity] = useState("ALL");
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
+
+  const loadAlerts = useCallback(async (idOverride) => {
+    if (!idOverride) return;
+
+    try {
+      setLoading(true);
+      setError("");
+
+      const res = await fetch(`/api/officers/${idOverride}/alerts`, {
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => []);
+
+      if (!res.ok) {
+        throw new Error(data.error || "Unable to load alerts");
+      }
+
+      setAlerts(normalizeList(data));
+    } catch (err) {
+      console.error(err);
+      setAlerts([]);
+      setError(err.message || "Unable to load alerts");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const id = typeof window !== "undefined" ? localStorage.getItem("officerId") : null;
@@ -44,54 +77,92 @@ export default function OfficerAlertsPage() {
 
     setOfficerId(id);
     setOfficerName(name || "Officer");
+    loadAlerts(id);
+  }, [loadAlerts, router]);
 
-    async function loadData() {
-      try {
-        setLoading(true);
-        setError("");
+  async function handleAlertAction(alertId, action) {
+    if (!officerId || !alertId) return;
 
-        const officerRes = await fetch(`/api/officers/${id}`, { cache: "no-store" });
-        const officerData = await officerRes.json();
+    try {
+      setActionLoading(`${action}:${alertId}`);
 
-        if (!officerRes.ok) {
-          throw new Error(officerData.error || "Unable to load officer assignments");
-        }
+      const res = await fetch(
+        `/api/officers/${officerId}/alerts/${alertId}/${action}`,
+        { method: "POST" }
+      );
+      const data = await res.json().catch(() => ({}));
 
-        const assignedIds = (officerData.assignedParolees || []).map((item) => item.id);
-        setAssignedParoleeIds(assignedIds);
-
-        const alertRes = await fetch("/api/alerts", { cache: "no-store" });
-        const alertData = await alertRes.json();
-
-        if (!alertRes.ok) {
-          throw new Error(alertData.error || "Unable to load alerts");
-        }
-
-        const filteredAlerts = Array.isArray(alertData)
-          ? alertData.filter((a) => assignedIds.includes(a.paroleeId))
-          : [];
-
-        setAlerts(filteredAlerts);
-      } catch (err) {
-        console.error(err);
-        setError(err.message || "Unable to load alerts");
-      } finally {
-        setLoading(false);
+      if (!res.ok) {
+        alert(data.error || `Failed to ${action} alert`);
+        return;
       }
+
+      await loadAlerts(officerId);
+    } catch (err) {
+      console.error(err);
+      alert(`Failed to ${action} alert`);
+    } finally {
+      setActionLoading("");
     }
+  }
 
-    loadData();
-  }, [router]);
+  function handleExport() {
+    const headers = [
+      "Alert ID",
+      "Parolee",
+      "Type",
+      "Severity",
+      "Location",
+      "Time",
+      "Status",
+      "Details",
+    ];
 
-  const filtered = alerts.filter((a) => {
-    const okStatus = filterStatus === "ALL" ? true : a.status === filterStatus;
-    const okSeverity =
-      filterSeverity === "ALL" ? true : a.severity === filterSeverity;
-    return okStatus && okSeverity;
-  });
+    const lines = filtered.map((a) =>
+      [
+        a.id,
+        a.paroleeLabel || a.paroleeId,
+        a.type,
+        a.severity,
+        a.location,
+        a.time,
+        a.status,
+        a.details || a.message || "",
+      ]
+        .map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`)
+        .join(",")
+    );
+
+    const csv = [headers.join(","), ...lines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "officer_alerts_export.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("role");
+    localStorage.removeItem("officerId");
+    localStorage.removeItem("officerName");
+    localStorage.removeItem("officerEmail");
+    localStorage.removeItem("officerBadgeId");
+    router.push("/officer/login");
+  }
+
+  const filtered = useMemo(() => {
+    return alerts.filter((a) => {
+      const okStatus = filterStatus === "ALL" ? true : a.status === filterStatus;
+      const okSeverity =
+        filterSeverity === "ALL" ? true : a.severity === filterSeverity;
+      return okStatus && okSeverity;
+    });
+  }, [alerts, filterStatus, filterSeverity]);
 
   const totalAlerts = alerts.length;
-  const activeAlerts = alerts.filter((a) => a.status === "ACTIVE").length;
+  const openAlerts = alerts.filter((a) => a.status === "OPEN").length;
   const criticalAlerts = alerts.filter((a) => a.severity === "CRITICAL").length;
   const acknowledgedAlerts = alerts.filter(
     (a) => a.status === "ACKNOWLEDGED"
@@ -115,18 +186,18 @@ export default function OfficerAlertsPage() {
                   GPS-Based Ankle Monitoring System
                 </div>
                 <div className="text-[11px] uppercase tracking-[0.22em] text-slate-300/80">
-                  Officer • Alerts
+                  Officer - Alerts
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
               <Link href="/officer/dashboard" className={btnGhost}>
-                ← Dashboard
+                Dashboard
               </Link>
-              <Link href="/officer/login" className={btnDanger}>
+              <button onClick={handleLogout} className={btnDanger}>
                 Logout
-              </Link>
+              </button>
             </div>
           </div>
         </header>
@@ -156,17 +227,17 @@ export default function OfficerAlertsPage() {
                   </div>
                 </div>
 
-                <Link href="/officer/login" className={`${btnDanger} mt-3 w-full`}>
+                <button onClick={handleLogout} className={`${btnDanger} mt-3 w-full`}>
                   Logout
-                </Link>
+                </button>
               </div>
             </div>
           </aside>
 
           <main className="col-span-12 h-[calc(95vh-5rem)] space-y-6 overflow-y-auto pb-0.5 md:col-span-9 lg:col-span-10">
-            {loading && (
-              <div className="rounded-[28px] border border-white/10 bg-black/20 p-6 text-center text-sm text-slate-300">
-                Loading alerts…
+            {error && (
+              <div className="rounded-[28px] border border-rose-400/20 bg-rose-500/10 p-4 text-sm text-rose-100">
+                {error}
               </div>
             )}
 
@@ -177,8 +248,8 @@ export default function OfficerAlertsPage() {
                 tone="bg-sky-500/15 border-sky-400/25 text-sky-100"
               />
               <MiniCard
-                title="Active"
-                value={String(activeAlerts)}
+                title="Open"
+                value={String(openAlerts)}
                 tone="bg-rose-500/15 border-rose-400/25 text-rose-100"
               />
               <MiniCard
@@ -198,13 +269,21 @@ export default function OfficerAlertsPage() {
                 <div>
                   <h1 className="text-lg font-semibold text-white">Alerts</h1>
                   <p className="text-sm text-slate-300/75">
-                    Alerts generated from assigned parolees only.
+                    Alerts generated from your assigned parolees only.
                   </p>
                 </div>
 
                 <div className="flex gap-2">
-                  <button className={btnGhost}>Export</button>
-                  <button className={btnSecondary}>Refresh</button>
+                  <button className={btnGhost} onClick={handleExport}>
+                    Export
+                  </button>
+                  <button
+                    className={btnSecondary}
+                    onClick={() => loadAlerts(officerId)}
+                    disabled={loading}
+                  >
+                    {loading ? "Refreshing..." : "Refresh"}
+                  </button>
                 </div>
               </div>
 
@@ -219,8 +298,8 @@ export default function OfficerAlertsPage() {
                     <option value="ALL" className="bg-slate-900 text-white">
                       All
                     </option>
-                    <option value="ACTIVE" className="bg-slate-900 text-white">
-                      Active
+                    <option value="OPEN" className="bg-slate-900 text-white">
+                      Open
                     </option>
                     <option value="ACKNOWLEDGED" className="bg-slate-900 text-white">
                       Acknowledged
@@ -272,60 +351,81 @@ export default function OfficerAlertsPage() {
 
             <section className={sectionCard}>
               <div className="space-y-3">
-                {filtered.map((a) => (
-                  <div
-                    key={a.id}
-                    className="rounded-2xl border border-white/10 bg-black/10 p-4"
-                  >
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <Badge tone={severityTone(a.severity)}>
-                            {a.severity}
-                          </Badge>
-                          <span className="text-sm font-semibold text-white">
-                            {a.type}
-                          </span>
+                {loading ? (
+                  <div className="rounded-2xl border border-white/10 bg-black/10 p-8 text-center text-sm text-slate-400">
+                    Loading alerts...
+                  </div>
+                ) : (
+                  filtered.map((a) => (
+                    <div
+                      key={a.id}
+                      className="rounded-2xl border border-white/10 bg-black/10 p-4"
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <Badge tone={severityTone(a.severity)}>
+                              {a.severity}
+                            </Badge>
+                            <span className="text-sm font-semibold text-white">
+                              {a.type}
+                            </span>
+                          </div>
+
+                          <div className="mt-1 text-sm text-slate-300">
+                            Parolee:{" "}
+                            <span className="font-semibold text-white">
+                              {a.paroleeLabel || a.paroleeId}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-xs text-slate-400">
+                            {a.details || a.message || "-"}
+                          </div>
                         </div>
 
-                        <div className="mt-1 text-sm text-slate-300">
-                          Parolee:{" "}
-                          <span className="font-semibold text-white">
-                            {a.paroleeId}
-                          </span>
-                        </div>
-                        <div className="mt-1 text-xs text-slate-400">
-                          {a.message}
+                        <div className="text-right">
+                          <div className="text-xs text-slate-400">Time</div>
+                          <div className="text-sm text-white">{a.time}</div>
                         </div>
                       </div>
 
-                      <div className="text-right">
-                        <div className="text-xs text-slate-400">Time</div>
-                        <div className="text-sm text-white">{a.time}</div>
-                      </div>
-                    </div>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {a.status === "OPEN" && (
+                          <button
+                            className={btnGhost}
+                            disabled={Boolean(actionLoading)}
+                            onClick={() => handleAlertAction(a.id, "acknowledge")}
+                          >
+                            {actionLoading === `acknowledge:${a.id}`
+                              ? "Working..."
+                              : "Acknowledge"}
+                          </button>
+                        )}
 
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {a.status === "ACTIVE" && (
-                        <>
-                          <button className={btnGhost}>Acknowledge</button>
-                          <button className={btnPrimary}>Resolve</button>
-                        </>
-                      )}
+                        {a.status !== "RESOLVED" && (
+                          <button
+                            className={btnPrimary}
+                            disabled={Boolean(actionLoading)}
+                            onClick={() => handleAlertAction(a.id, "resolve")}
+                          >
+                            {actionLoading === `resolve:${a.id}`
+                              ? "Working..."
+                              : "Resolve"}
+                          </button>
+                        )}
 
-                      {a.status !== "ACTIVE" && (
-                        <span className="text-xs text-slate-400">
+                        <span className="inline-flex items-center text-xs text-slate-400">
                           Status:{" "}
-                          <span className="font-semibold text-white">
+                          <span className="ml-1 font-semibold text-white">
                             {a.status}
                           </span>
                         </span>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
 
-                {filtered.length === 0 && (
+                {!loading && filtered.length === 0 && (
                   <div className="rounded-2xl border border-white/10 bg-black/10 p-8 text-center text-sm text-slate-400">
                     No alerts found.
                   </div>
@@ -387,9 +487,9 @@ function Badge({ tone, children }) {
   );
 }
 
-function severityTone(sev) {
-  if (sev === "CRITICAL") return "red";
-  if (sev === "HIGH") return "amber";
-  if (sev === "MEDIUM") return "orange";
+function severityTone(severity) {
+  if (severity === "CRITICAL") return "red";
+  if (severity === "HIGH") return "amber";
+  if (severity === "MEDIUM") return "orange";
   return "gray";
 }
