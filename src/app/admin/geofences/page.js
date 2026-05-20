@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 
-const REFRESH_MS = 20000;
+const REFRESH_MS = 10000;
 
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),

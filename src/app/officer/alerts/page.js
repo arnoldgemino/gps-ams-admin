@@ -7,6 +7,8 @@ import Link from "next/link";
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
 
+const REFRESH_MS = 10000;
+
 const btnPrimary =
   "inline-flex items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-slate-100 active:scale-[0.99] disabled:opacity-60";
 
@@ -40,11 +42,11 @@ export default function OfficerAlertsPage() {
   const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
 
-  const loadAlerts = useCallback(async (idOverride) => {
+  const loadAlerts = useCallback(async (idOverride, showLoader = true) => {
     if (!idOverride) return;
 
     try {
-      setLoading(true);
+      if (showLoader) setLoading(true);
       setError("");
 
       const res = await fetch(`/api/officers/${idOverride}/alerts`, {
@@ -62,7 +64,7 @@ export default function OfficerAlertsPage() {
       setAlerts([]);
       setError(err.message || "Unable to load alerts");
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   }, []);
 
@@ -79,6 +81,18 @@ export default function OfficerAlertsPage() {
     setOfficerName(name || "Officer");
     loadAlerts(id);
   }, [loadAlerts, router]);
+
+  useEffect(() => {
+    if (!officerId) return;
+
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        loadAlerts(officerId, false);
+      }
+    }, REFRESH_MS);
+
+    return () => clearInterval(interval);
+  }, [loadAlerts, officerId]);
 
   async function handleAlertAction(alertId, action) {
     if (!officerId || !alertId) return;
@@ -163,7 +177,9 @@ export default function OfficerAlertsPage() {
 
   const totalAlerts = alerts.length;
   const openAlerts = alerts.filter((a) => a.status === "OPEN").length;
-  const criticalAlerts = alerts.filter((a) => a.severity === "CRITICAL").length;
+  const highPriorityAlerts = alerts.filter((a) =>
+    ["HIGH", "CRITICAL"].includes(a.severity)
+  ).length;
   const acknowledgedAlerts = alerts.filter(
     (a) => a.status === "ACKNOWLEDGED"
   ).length;
@@ -254,8 +270,8 @@ export default function OfficerAlertsPage() {
                 tone="bg-rose-500/15 border-rose-400/25 text-rose-100"
               />
               <MiniCard
-                title="Critical"
-                value={String(criticalAlerts)}
+                title="High/Critical"
+                value={String(highPriorityAlerts)}
                 tone="bg-amber-400/15 border-amber-300/25 text-amber-100"
               />
               <MiniCard
@@ -326,6 +342,9 @@ export default function OfficerAlertsPage() {
                     </option>
                     <option value="HIGH" className="bg-slate-900 text-white">
                       High
+                    </option>
+                    <option value="WARNING" className="bg-slate-900 text-white">
+                      Warning
                     </option>
                     <option value="MEDIUM" className="bg-slate-900 text-white">
                       Medium
@@ -491,6 +510,7 @@ function Badge({ tone, children }) {
 function severityTone(severity) {
   if (severity === "CRITICAL") return "red";
   if (severity === "HIGH") return "amber";
+  if (severity === "WARNING") return "orange";
   if (severity === "MEDIUM") return "orange";
   return "gray";
 }

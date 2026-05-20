@@ -37,6 +37,8 @@ const btnGhost =
 const btnDanger =
   "inline-flex items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/15 px-4 py-2 text-sm font-medium text-rose-100 transition hover:bg-rose-500/25 active:scale-[0.99]";
 
+const REFRESH_MS = 10000;
+
 function normalizeList(payload) {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.items)) return payload.items;
@@ -80,9 +82,9 @@ export default function OfficerDashboardPage() {
     setOfficerId(id);
     setOfficerName(name || "Officer");
 
-    async function loadOfficer() {
+    async function loadOfficer(showLoader = true) {
       try {
-        setLoading(true);
+        if (showLoader) setLoading(true);
         const res = await fetch(`/api/officers/${id}`, { cache: "no-store" });
         const data = await res.json();
 
@@ -123,11 +125,18 @@ export default function OfficerDashboardPage() {
         setAssigned([]);
         setAlerts([]);
       } finally {
-        setLoading(false);
+        if (showLoader) setLoading(false);
       }
     }
 
     loadOfficer();
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        loadOfficer(false);
+      }
+    }, REFRESH_MS);
+
+    return () => clearInterval(interval);
   }, [router]);
 
   async function handleAlertAction(alertId, action) {
@@ -193,7 +202,7 @@ export default function OfficerDashboardPage() {
         tone: "bg-amber-400/15 border-amber-300/25 text-amber-100",
       },
       {
-        label: "Geofence Breaches",
+        label: "Geofence Alerts",
         value: alerts.filter((a) => a.status === "OPEN" && a.type === "GEOFENCE")
           .length,
         tone: "bg-white/[0.08] border-white/10 text-slate-200",
@@ -576,5 +585,6 @@ function Badge({ tone, children }) {
 function severityTone(severity) {
   if (severity === "CRITICAL") return "red";
   if (severity === "HIGH") return "amber";
+  if (severity === "WARNING") return "amber";
   return "gray";
 }

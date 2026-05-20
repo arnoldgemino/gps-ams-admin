@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 
 export function getOfflineThresholdSec(telemetryIntervalSec) {
-  return Math.max(Number(telemetryIntervalSec || 30) * 2, 60);
+  return Math.max(Number(telemetryIntervalSec || 10) * 2, 60);
 }
 
 async function ensureOpenAlert(tx, { paroleeId, officerId, type, details }) {
@@ -58,7 +58,7 @@ export async function runOfflineAlertCheck() {
     },
   });
 
-  const telemetryIntervalSec = settings?.telemetryIntervalSec ?? 30;
+  const telemetryIntervalSec = settings?.telemetryIntervalSec ?? 10;
   const offlineThresholdSec = getOfflineThresholdSec(telemetryIntervalSec);
   const cutoff = new Date(Date.now() - offlineThresholdSec * 1000);
 

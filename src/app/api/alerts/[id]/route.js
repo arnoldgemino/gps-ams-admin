@@ -3,19 +3,12 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getAlertSeverity } from "@/lib/alert-severity";
 
 function jsonNoCache(data, init = {}) {
   const headers = new Headers(init.headers || {});
   headers.set("Cache-Control", "no-store, max-age=0");
   return NextResponse.json(data, { ...init, headers });
-}
-
-function getSeverity(type) {
-  if (type === "TAMPER") return "CRITICAL";
-  if (type === "GEOFENCE") return "HIGH";
-  if (type === "OFFLINE") return "HIGH";
-  if (type === "LOW_BATTERY") return "MEDIUM";
-  return "MEDIUM";
 }
 
 async function getRouteId(req, params) {
@@ -96,7 +89,7 @@ export async function GET(req, { params }) {
           ? `${parolee.paroleeNo} - ${parolee.fullName}`
           : alert.paroleeId || "—",
         type: alert.type,
-        severity: getSeverity(alert.type),
+        severity: getAlertSeverity(alert.type, alert.details),
         status: alert.status,
         details: alert.details || "",
         time: alert.createdAt ? new Date(alert.createdAt).toLocaleString() : "—",

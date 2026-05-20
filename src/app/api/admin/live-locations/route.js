@@ -19,7 +19,7 @@ export async function GET() {
       },
     });
 
-    const telemetryIntervalSec = settings?.telemetryIntervalSec ?? 30;
+    const telemetryIntervalSec = settings?.telemetryIntervalSec ?? 10;
     const offlineThresholdSec = getOfflineThresholdSec(telemetryIntervalSec);
     const cutoff = new Date(Date.now() - offlineThresholdSec * 1000);
 

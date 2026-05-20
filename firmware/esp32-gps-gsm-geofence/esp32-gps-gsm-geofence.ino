@@ -68,26 +68,53 @@ const float BATTERY_FULL_VOLTAGE = 4.20;
 const int TAMPER_PIN = 33;
 const bool TAMPER_ENABLED = false;
 
+// =========================
+// VIBRATION MOTOR
+// GPIO25 -> transistor/MOSFET driver -> vibration motor.
+// Do not power the motor directly from the ESP32 GPIO pin.
+// =========================
+const int VIBRATION_MOTOR_PIN = 25;
+const bool VIBRATION_MOTOR_ACTIVE_HIGH = true;
+const unsigned long VIBRATION_PULSE_ON_MS = 350;
+const unsigned long VIBRATION_PULSE_OFF_MS = 250;
+const unsigned long VIBRATION_FAILSAFE_TIMEOUT_MS = 30000;
+const unsigned long VIBRATION_MAX_CONTINUOUS_ON_MS = 30000;
+const unsigned long VIBRATION_COOLDOWN_MS = 30000;
+
 WiFiClientSecure wifiClient;
 HttpClient http(wifiClient, serverHost, serverPort);
 
 unsigned long lastSend = 0;
-// Telemetry send interval. Recommended range: 30000 to 60000 ms.
-const unsigned long sendIntervalMs = 30000;
+// Telemetry send interval: 10 seconds.
+const unsigned long sendIntervalMs = 10000;
 
 // Saves power between telemetry sends. Light sleep keeps RAM/state but pauses the CPU.
 const bool sleepModeEnabled = false;
 const unsigned long maxSleepIntervalMs = 60000;
 
 String currentGeofenceAlertId = "";
-int geofenceWarningCount = 0;
+String currentGeofenceWarningAlertId = "";
+int geofenceBreachCount = 0;
+bool warningVibrationPlayedForCurrentAlert = false;
+bool warningSmsSentForCurrentBreach = false;
+bool highSmsSentForCurrentBreach = false;
 bool callPlacedForCurrentBreach = false;
+const int highAlertBreachCount = 2;
+bool vibrationMotorIsOn = false;
+unsigned long vibrationMotorLastOnMs = 0;
+unsigned long vibrationMotorStartedAtMs = 0;
+bool vibrationMotorCooldownActive = false;
+unsigned long vibrationMotorCooldownStartedAtMs = 0;
 
 struct TelemetryResult {
   bool ok;
   int statusCode;
   String response;
 };
+
+void enforceVibrationMotorFailsafe();
+void delayWithVibrationFailsafe(unsigned long delayMs);
+bool isVibrationMotorCoolingDown();
 
 void printDivider() {
   Serial.println("==============================");
@@ -170,6 +197,35 @@ bool extractJsonBool(const String& json, const String& key) {
   return json.substring(valueIndex, valueIndex + 4) == "true";
 }
 
+int extractJsonInt(const String& json, const String& key, int defaultValue) {
+  String marker = "\"" + key + "\":";
+  int keyIndex = json.indexOf(marker);
+  if (keyIndex < 0) return defaultValue;
+
+  int valueIndex = keyIndex + marker.length();
+  while (valueIndex < json.length() && json[valueIndex] == ' ') valueIndex++;
+
+  bool negative = false;
+  if (valueIndex < json.length() && json[valueIndex] == '-') {
+    negative = true;
+    valueIndex++;
+  }
+
+  int result = 0;
+  bool foundDigit = false;
+
+  while (valueIndex < json.length()) {
+    char c = json[valueIndex];
+    if (c < '0' || c > '9') break;
+    result = (result * 10) + (c - '0');
+    foundDigit = true;
+    valueIndex++;
+  }
+
+  if (!foundDigit) return defaultValue;
+  return negative ? -result : result;
+}
+
 bool connectWiFi() {
   Serial.print("Connecting to WiFi: ");
   Serial.println(ssid);
@@ -228,7 +284,7 @@ String readGsmResponse(unsigned long timeoutMs) {
     while (gsmSerial.available()) {
       response += char(gsmSerial.read());
     }
-    delay(10);
+    delayWithVibrationFailsafe(10);
   }
 
   response.trim();
@@ -301,7 +357,7 @@ bool callOfficer(const String& phoneNumber) {
   gsmSerial.println(";");
   readGsmResponse(5000);
 
-  delay(20000);
+  delayWithVibrationFailsafe(20000);
 
   gsmSerial.println("ATH");
   readGsmResponse(3000);
@@ -342,6 +398,88 @@ int batteryPercentFromVoltage(float voltage) {
 String readTamperStatus() {
   if (!TAMPER_ENABLED) return "OK";
   return digitalRead(TAMPER_PIN) == LOW ? "TAMPER" : "OK";
+}
+
+void setVibrationMotor(bool on) {
+  if (on && isVibrationMotorCoolingDown()) {
+    return;
+  }
+
+  digitalWrite(
+    VIBRATION_MOTOR_PIN,
+    on == VIBRATION_MOTOR_ACTIVE_HIGH ? HIGH : LOW
+  );
+
+  if (on && !vibrationMotorIsOn) {
+    vibrationMotorStartedAtMs = millis();
+  }
+
+  vibrationMotorIsOn = on;
+  if (on) {
+    vibrationMotorLastOnMs = millis();
+  }
+}
+
+void stopVibrationMotor() {
+  setVibrationMotor(false);
+}
+
+bool isVibrationMotorCoolingDown() {
+  if (!vibrationMotorCooldownActive) return false;
+
+  if (millis() - vibrationMotorCooldownStartedAtMs < VIBRATION_COOLDOWN_MS) {
+    return true;
+  }
+
+  vibrationMotorCooldownActive = false;
+  return false;
+}
+
+void enforceVibrationMotorFailsafe() {
+  if (!vibrationMotorIsOn) return;
+
+  bool noRecentRefresh = millis() - vibrationMotorLastOnMs >= VIBRATION_FAILSAFE_TIMEOUT_MS;
+  bool ranTooLong = millis() - vibrationMotorStartedAtMs >= VIBRATION_MAX_CONTINUOUS_ON_MS;
+
+  if (!noRecentRefresh && !ranTooLong) {
+    return;
+  }
+
+  if (ranTooLong) {
+    Serial.println("Vibration motor max runtime reached. Cooling down.");
+  } else {
+    Serial.println("Vibration motor failsafe timeout. Motor OFF.");
+  }
+
+  stopVibrationMotor();
+  vibrationMotorCooldownActive = true;
+  vibrationMotorCooldownStartedAtMs = millis();
+}
+
+void delayWithVibrationFailsafe(unsigned long delayMs) {
+  unsigned long startedAt = millis();
+
+  while (millis() - startedAt < delayMs) {
+    enforceVibrationMotorFailsafe();
+    delay(10);
+  }
+}
+
+void pulseVibrationMotor(int pulseCount) {
+  if (pulseCount <= 0) return;
+
+  stopVibrationMotor();
+  delay(100);
+
+  for (int i = 0; i < pulseCount; i++) {
+    setVibrationMotor(true);
+    delay(VIBRATION_PULSE_ON_MS);
+    stopVibrationMotor();
+
+    if (i < pulseCount - 1) {
+      delay(VIBRATION_PULSE_OFF_MS);
+    }
+  }
 }
 
 TelemetryResult sendTelemetry(
@@ -413,15 +551,30 @@ TelemetryResult sendTelemetry(
   return result;
 }
 
-String buildWarningSms(const String& serverMessage, int warningNumber) {
-  String message = "GPS-AMS WARNING ";
-  message += String(warningNumber);
-  message += "/3: ";
+String normalizeAlertSeverity(String alertSeverity) {
+  alertSeverity.trim();
+  alertSeverity.toUpperCase();
+  return alertSeverity;
+}
 
-  if (serverMessage.length() > 0) {
-    message += serverMessage;
+String buildGeofenceSms(const String& serverMessage, const String& alertSeverity, int breachCount) {
+  String severity = normalizeAlertSeverity(alertSeverity);
+  String message = "";
+
+  if (serverMessage.startsWith("GPS-AMS")) {
+    message = serverMessage;
   } else {
-    message += "Assigned parolee breached geofence.";
+    message = "GPS-AMS ";
+    message += severity == "HIGH" ? "HIGH ALERT" : "WARNING";
+    message += " ";
+    message += String(breachCount);
+    message += ": ";
+
+    if (serverMessage.length() > 0) {
+      message += serverMessage;
+    } else {
+      message += "Assigned parolee breached geofence.";
+    }
   }
 
   if (message.length() > 155) {
@@ -435,17 +588,63 @@ void handleServerDeviceAction(const TelemetryResult& telemetryResult) {
   if (!telemetryResult.ok) return;
 
   bool geofenceBreach = extractJsonBool(telemetryResult.response, "geofenceBreach");
+  bool geofenceWarning = extractJsonBool(telemetryResult.response, "geofenceWarning");
   String alertId = extractJsonString(telemetryResult.response, "geofenceAlertId");
   String officerPhone = extractJsonString(telemetryResult.response, "officerPhone");
   String smsMessage = extractJsonString(telemetryResult.response, "smsMessage");
+  String alertSeverity = normalizeAlertSeverity(
+    extractJsonString(telemetryResult.response, "alertSeverity")
+  );
+  bool serverSaysCallOfficer = extractJsonBool(telemetryResult.response, "callOfficer");
+  bool vibrationContinuous = extractJsonBool(telemetryResult.response, "vibrationContinuous");
+  int vibrationPulseCount = extractJsonInt(telemetryResult.response, "vibrationPulseCount", 0);
+  String vibrationMode = extractJsonString(telemetryResult.response, "vibrationMode");
+  vibrationMode.trim();
+  vibrationMode.toUpperCase();
 
   if (!geofenceBreach) {
-    if (geofenceWarningCount > 0) {
-      Serial.println("Geofence normal again. Warning counter reset.");
-    }
-    geofenceWarningCount = 0;
+    bool hadBreachState = geofenceBreachCount > 0;
+    geofenceBreachCount = 0;
     currentGeofenceAlertId = "";
+    warningSmsSentForCurrentBreach = false;
+    highSmsSentForCurrentBreach = false;
     callPlacedForCurrentBreach = false;
+
+    if (geofenceWarning || vibrationMode == "WARNING") {
+      if (alertId.length() == 0) {
+        alertId = "local-geofence-warning";
+      }
+
+      if (alertId != currentGeofenceWarningAlertId) {
+        currentGeofenceWarningAlertId = alertId;
+        warningVibrationPlayedForCurrentAlert = false;
+      }
+
+      if (!warningVibrationPlayedForCurrentAlert) {
+        if (vibrationPulseCount <= 0) {
+          vibrationPulseCount = 3;
+        }
+
+        Serial.print("Near inclusion boundary. Vibration warning pulses: ");
+        Serial.println(vibrationPulseCount);
+        pulseVibrationMotor(vibrationPulseCount);
+        warningVibrationPlayedForCurrentAlert = true;
+      }
+
+      return;
+    }
+
+    if (hadBreachState) {
+      Serial.println("Geofence normal again. Breach state reset.");
+    }
+
+    if (currentGeofenceWarningAlertId.length() > 0) {
+      Serial.println("Inclusion boundary warning cleared.");
+    }
+
+    currentGeofenceWarningAlertId = "";
+    warningVibrationPlayedForCurrentAlert = false;
+    stopVibrationMotor();
     return;
   }
 
@@ -453,24 +652,56 @@ void handleServerDeviceAction(const TelemetryResult& telemetryResult) {
     alertId = "local-geofence-breach";
   }
 
+  currentGeofenceWarningAlertId = "";
+  warningVibrationPlayedForCurrentAlert = false;
+
   if (alertId != currentGeofenceAlertId) {
     currentGeofenceAlertId = alertId;
-    geofenceWarningCount = 0;
+    geofenceBreachCount = 0;
+    warningSmsSentForCurrentBreach = false;
+    highSmsSentForCurrentBreach = false;
     callPlacedForCurrentBreach = false;
   }
 
-  if (geofenceWarningCount < 3) {
-    geofenceWarningCount++;
-    Serial.print("Geofence warning count: ");
-    Serial.println(geofenceWarningCount);
+  geofenceBreachCount++;
+  Serial.print("Geofence breach count: ");
+  Serial.println(geofenceBreachCount);
 
-    sendSms(officerPhone, buildWarningSms(smsMessage, geofenceWarningCount));
+  if (alertSeverity.length() == 0) {
+    alertSeverity = "WARNING";
   }
 
-  if (geofenceWarningCount >= 3 && !callPlacedForCurrentBreach) {
-    Serial.println("Warning limit reached. Calling assigned officer.");
-    callOfficer(officerPhone);
-    callPlacedForCurrentBreach = true;
+  if (vibrationContinuous || vibrationMode == "BREACH" || geofenceBreach) {
+    Serial.println("Geofence breach active. Vibration motor ON continuously.");
+    setVibrationMotor(true);
+  }
+
+  bool highAlert = alertSeverity == "HIGH" ||
+                   alertSeverity == "CRITICAL" ||
+                   geofenceBreachCount >= highAlertBreachCount;
+
+  if (highAlert) {
+    alertSeverity = "HIGH";
+
+    if (!highSmsSentForCurrentBreach) {
+      Serial.println("Geofence HIGH alert. Sending high SMS to assigned officer.");
+      sendSms(officerPhone, buildGeofenceSms(smsMessage, alertSeverity, geofenceBreachCount));
+      highSmsSentForCurrentBreach = true;
+    }
+
+    if (serverSaysCallOfficer && !callPlacedForCurrentBreach) {
+      Serial.println("Geofence HIGH alert. Calling assigned officer.");
+      callOfficer(officerPhone);
+      callPlacedForCurrentBreach = true;
+    }
+
+    return;
+  }
+
+  if (!warningSmsSentForCurrentBreach) {
+    Serial.println("Geofence WARNING alert. Sending warning SMS to assigned officer.");
+    sendSms(officerPhone, buildGeofenceSms(smsMessage, alertSeverity, geofenceBreachCount));
+    warningSmsSentForCurrentBreach = true;
   }
 }
 
@@ -485,6 +716,9 @@ void setup() {
     pinMode(TAMPER_PIN, INPUT_PULLUP);
   }
 
+  pinMode(VIBRATION_MOTOR_PIN, OUTPUT);
+  stopVibrationMotor();
+
   gpsSerial.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
   gsmSerial.begin(9600, SERIAL_8N1, GSM_RX_PIN, GSM_TX_PIN);
   delay(1000);
@@ -498,6 +732,8 @@ void setup() {
 }
 
 void loop() {
+  enforceVibrationMotorFailsafe();
+
   while (gpsSerial.available() > 0) {
     gps.encode(gpsSerial.read());
   }

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-const REFRESH_MS = 20000;
+const REFRESH_MS = 10000;
 
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
@@ -242,6 +242,7 @@ export default function AdminAlertsPage() {
       "Severity",
       "Location",
       "Time",
+      "Assigned Officer",
       "Status",
       "Details",
     ];
@@ -254,6 +255,7 @@ export default function AdminAlertsPage() {
         r.severity,
         r.location,
         r.time,
+        r.officerLabel,
         r.status,
         r.details || "",
       ]
@@ -292,7 +294,9 @@ export default function AdminAlertsPage() {
 
   const totalAlerts = rows.length;
   const openAlerts = rows.filter((r) => r.status === "OPEN").length;
-  const criticalAlerts = rows.filter((r) => r.severity === "CRITICAL").length;
+  const highPriorityAlerts = rows.filter((r) =>
+    ["HIGH", "CRITICAL"].includes(r.severity)
+  ).length;
   const acknowledgedAlerts = rows.filter((r) => r.status === "ACKNOWLEDGED").length;
   const resolvedAlerts = rows.filter((r) => r.status === "RESOLVED").length;
 
@@ -380,8 +384,8 @@ export default function AdminAlertsPage() {
                 tone="bg-rose-500/15 border-rose-400/25 text-rose-100"
               />
               <MiniCard
-                title="Critical"
-                value={String(criticalAlerts)}
+                title="High/Critical"
+                value={String(highPriorityAlerts)}
                 tone="bg-amber-400/15 border-amber-300/25 text-amber-100"
               />
               <MiniCard
@@ -508,6 +512,7 @@ export default function AdminAlertsPage() {
                       <th className="py-3 px-3 text-left font-medium">Severity</th>
                       <th className="py-3 px-3 text-left font-medium">Location</th>
                       <th className="py-3 px-3 text-left font-medium">Time</th>
+                      <th className="py-3 px-3 text-left font-medium">Assigned Officer</th>
                       <th className="py-3 px-3 text-left font-medium">Status</th>
                       <th className="py-3 px-3 text-right font-medium">Actions</th>
                     </tr>
@@ -526,6 +531,8 @@ export default function AdminAlertsPage() {
                                 ? "red"
                                 : r.severity === "HIGH"
                                 ? "amber"
+                                : r.severity === "WARNING"
+                                ? "orange"
                                 : "gray"
                             }
                           >
@@ -534,6 +541,7 @@ export default function AdminAlertsPage() {
                         </td>
                         <td className="py-3 px-3 text-slate-300">{r.location}</td>
                         <td className="py-3 px-3 text-slate-400">{r.time}</td>
+                        <td className="py-3 px-3 text-slate-300">{r.officerLabel}</td>
                         <td className="py-3 px-3">
                           <Badge
                             tone={
@@ -573,7 +581,7 @@ export default function AdminAlertsPage() {
 
                     {filtered.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="py-10 text-center text-slate-400">
+                        <td colSpan={9} className="py-10 text-center text-slate-400">
                           {loading ? "Loading..." : "No alerts found."}
                         </td>
                       </tr>
@@ -669,6 +677,8 @@ function Badge({ tone, children }) {
       ? "border-rose-300/20 bg-rose-400/15 text-rose-100"
       : tone === "amber"
       ? "border-amber-300/20 bg-amber-400/15 text-amber-100"
+      : tone === "orange"
+      ? "border-orange-300/20 bg-orange-400/15 text-orange-100"
       : tone === "green"
       ? "border-emerald-300/20 bg-emerald-400/15 text-emerald-100"
       : "border-white/10 bg-white/[0.06] text-slate-200";

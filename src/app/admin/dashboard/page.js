@@ -31,7 +31,7 @@ const btnSecondary =
 const btnDanger =
   "inline-flex items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/15 px-4 py-2 text-sm font-medium text-rose-100 transition hover:bg-rose-500/25 active:scale-[0.99]";
 
-const REFRESH_MS = 20000; // 20 seconds
+const REFRESH_MS = 10000; // 10 seconds
 
 async function readJsonSafe(res) {
   try {
