@@ -76,7 +76,7 @@ unsigned long lastSend = 0;
 const unsigned long sendIntervalMs = 30000;
 
 // Saves power between telemetry sends. Light sleep keeps RAM/state but pauses the CPU.
-const bool sleepModeEnabled = true;
+const bool sleepModeEnabled = false;
 const unsigned long maxSleepIntervalMs = 60000;
 
 String currentGeofenceAlertId = "";
