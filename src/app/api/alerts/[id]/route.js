@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAlertSeverity } from "@/lib/alert-severity";
+import { formatPhilippinesDateTime } from "@/lib/time";
 
 function jsonNoCache(data, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -92,7 +93,7 @@ export async function GET(req, { params }) {
         severity: getAlertSeverity(alert.type, alert.details),
         status: alert.status,
         details: alert.details || "",
-        time: alert.createdAt ? new Date(alert.createdAt).toLocaleString() : "—",
+        time: formatPhilippinesDateTime(alert.createdAt, "—"),
         location: latestTelemetry
           ? `${latestTelemetry.lat}, ${latestTelemetry.lng}`
           : "Unknown",

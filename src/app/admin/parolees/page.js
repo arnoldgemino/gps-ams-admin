@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatPhilippinesDateTime } from "@/lib/time";
 
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
@@ -728,7 +729,7 @@ export default function AdminParoleesPage() {
                   label="Created"
                   value={
                     selectedParoleeDetail.createdAt
-                      ? new Date(selectedParoleeDetail.createdAt).toLocaleString()
+                      ? formatPhilippinesDateTime(selectedParoleeDetail.createdAt)
                       : "—"
                   }
                 />
@@ -744,7 +745,7 @@ export default function AdminParoleesPage() {
                   label="Last Seen"
                   value={
                     selectedParoleeDetail.latestTelemetry?.createdAt
-                      ? new Date(selectedParoleeDetail.latestTelemetry.createdAt).toLocaleString()
+                      ? formatPhilippinesDateTime(selectedParoleeDetail.latestTelemetry.createdAt)
                       : "—"
                   }
                 />
@@ -773,7 +774,7 @@ export default function AdminParoleesPage() {
                             <div className="text-xs text-slate-400">{a.details || "—"}</div>
                           </div>
                           <div className="text-xs text-slate-400">
-                            {a.createdAt ? new Date(a.createdAt).toLocaleString() : "—"}
+                            {formatPhilippinesDateTime(a.createdAt, "—")}
                           </div>
                         </div>
                       ))}

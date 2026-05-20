@@ -27,3 +27,35 @@ export function clearOfficerSession() {
     }
   );
 }
+
+export function clearClientSession() {
+  if (typeof window === "undefined") return;
+  [
+    "role",
+    "adminEmail",
+    "adminLoggedInAt",
+    "officerId",
+    "officerName",
+    "officerEmail",
+    "officerBadgeId",
+    "officerLoggedInAt",
+  ].forEach((key) => {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  });
+}
+
+export async function logoutAndRedirect(path = "/login") {
+  clearClientSession();
+
+  try {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      cache: "no-store",
+    });
+  } catch {
+    // The local session is already cleared; redirect even if the network fails.
+  }
+
+  window.location.href = path;
+}

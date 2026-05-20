@@ -1,7 +1,10 @@
 import { prisma } from "@/lib/prisma";
+import { formatPhilippinesDateTime } from "@/lib/time";
 
 export function getOfflineThresholdSec(telemetryIntervalSec) {
-  return Math.max(Number(telemetryIntervalSec || 10) * 2, 60);
+  const intervalSec = Number(telemetryIntervalSec || 10);
+  if (!Number.isFinite(intervalSec) || intervalSec < 1) return 20;
+  return intervalSec * 2;
 }
 
 async function ensureOpenAlert(tx, { paroleeId, officerId, type, details }) {
@@ -55,11 +58,36 @@ export async function runOfflineAlertCheck() {
   const settings = await prisma.systemSettings.findFirst({
     select: {
       telemetryIntervalSec: true,
+      offlineAlerts: true,
     },
   });
 
   const telemetryIntervalSec = settings?.telemetryIntervalSec ?? 10;
   const offlineThresholdSec = getOfflineThresholdSec(telemetryIntervalSec);
+
+  if (settings?.offlineAlerts === false) {
+    await prisma.alert.updateMany({
+      where: {
+        type: "OFFLINE",
+        status: {
+          in: ["OPEN", "ACKNOWLEDGED"],
+        },
+      },
+      data: {
+        status: "RESOLVED",
+        resolvedAt: new Date(),
+      },
+    });
+
+    return {
+      ok: true,
+      processed: 0,
+      created: 0,
+      offlineThresholdSec,
+      disabled: true,
+    };
+  }
+
   const cutoff = new Date(Date.now() - offlineThresholdSec * 1000);
 
   const activeDeviceAssignments = await prisma.deviceAssignment.findMany({
@@ -139,7 +167,7 @@ export async function runOfflineAlertCheck() {
 
       if (!latest || latest.createdAt < cutoff) {
         const lastSeenText = latest
-          ? latest.createdAt.toISOString()
+          ? formatPhilippinesDateTime(latest.createdAt)
           : "no telemetry received yet";
 
         const result = await ensureOpenAlert(tx, {

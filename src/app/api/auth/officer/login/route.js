@@ -3,10 +3,15 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import {
+  OFFICER_SESSION_COOKIE,
+  SESSION_COOKIE_OPTIONS,
+  sessionMaxAge,
+} from "@/lib/auth-cookies";
 
 export async function POST(req) {
   try {
-    const { email, password } = await req.json();
+    const { email, password, stayLoggedIn } = await req.json();
 
     if (!email || !password) {
       return NextResponse.json({ message: "Missing fields" }, { status: 400 });
@@ -41,7 +46,7 @@ export async function POST(req) {
       return NextResponse.json({ message: "Invalid credentials" }, { status: 401 });
     }
 
-    return NextResponse.json(
+    const res = NextResponse.json(
       {
         message: "Logged in",
         officer: {
@@ -54,6 +59,13 @@ export async function POST(req) {
       },
       { status: 200 }
     );
+
+    res.cookies.set(OFFICER_SESSION_COOKIE, officer.id, {
+      ...SESSION_COOKIE_OPTIONS,
+      maxAge: sessionMaxAge(Boolean(stayLoggedIn)),
+    });
+
+    return res;
   } catch (e) {
     console.error("Officer login error:", e);
     return NextResponse.json({ message: "Server error" }, { status: 500 });

@@ -85,8 +85,10 @@ WiFiClientSecure wifiClient;
 HttpClient http(wifiClient, serverHost, serverPort);
 
 unsigned long lastSend = 0;
-// Telemetry send interval: 10 seconds.
-const unsigned long sendIntervalMs = 10000;
+// Telemetry send interval. The server can update this through /api/telemetry.
+unsigned long sendIntervalMs = 10000;
+const unsigned long MIN_SEND_INTERVAL_MS = 1000;
+const unsigned long MAX_SEND_INTERVAL_MS = 30000;
 
 // Saves power between telemetry sends. Light sleep keeps RAM/state but pauses the CPU.
 const bool sleepModeEnabled = false;
@@ -197,6 +199,12 @@ bool extractJsonBool(const String& json, const String& key) {
   return json.substring(valueIndex, valueIndex + 4) == "true";
 }
 
+unsigned long clampSendIntervalMs(unsigned long intervalMs) {
+  if (intervalMs < MIN_SEND_INTERVAL_MS) return MIN_SEND_INTERVAL_MS;
+  if (intervalMs > MAX_SEND_INTERVAL_MS) return MAX_SEND_INTERVAL_MS;
+  return intervalMs;
+}
+
 int extractJsonInt(const String& json, const String& key, int defaultValue) {
   String marker = "\"" + key + "\":";
   int keyIndex = json.indexOf(marker);
@@ -224,6 +232,27 @@ int extractJsonInt(const String& json, const String& key, int defaultValue) {
 
   if (!foundDigit) return defaultValue;
   return negative ? -result : result;
+}
+
+void applyTelemetryIntervalFromServer(const String& response) {
+  int intervalMs = extractJsonInt(response, "telemetryIntervalMs", 0);
+
+  if (intervalMs <= 0) {
+    int intervalSec = extractJsonInt(response, "telemetryIntervalSec", 0);
+    if (intervalSec > 0) {
+      intervalMs = intervalSec * 1000;
+    }
+  }
+
+  if (intervalMs <= 0) return;
+
+  unsigned long nextIntervalMs = clampSendIntervalMs((unsigned long)intervalMs);
+  if (nextIntervalMs == sendIntervalMs) return;
+
+  sendIntervalMs = nextIntervalMs;
+  Serial.print("Telemetry interval updated from server: ");
+  Serial.print(sendIntervalMs / 1000);
+  Serial.println(" seconds");
 }
 
 bool connectWiFi() {
@@ -586,6 +615,8 @@ String buildGeofenceSms(const String& serverMessage, const String& alertSeverity
 
 void handleServerDeviceAction(const TelemetryResult& telemetryResult) {
   if (!telemetryResult.ok) return;
+
+  applyTelemetryIntervalFromServer(telemetryResult.response);
 
   bool geofenceBreach = extractJsonBool(telemetryResult.response, "geofenceBreach");
   bool geofenceWarning = extractJsonBool(telemetryResult.response, "geofenceWarning");

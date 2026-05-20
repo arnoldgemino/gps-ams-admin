@@ -7,6 +7,7 @@ import {
   getAlertSeverity,
   withAlertSeverityPrefix,
 } from "@/lib/alert-severity";
+import { formatPhilippinesDateTime } from "@/lib/time";
 
 function toRad(value) {
   return (value * Math.PI) / 180;
@@ -328,6 +329,7 @@ export async function POST(req) {
 
     const officerId = officerAssignment?.officerId || null;
     const officer = officerAssignment?.officer || null;
+    const telemetryIntervalSec = settings?.telemetryIntervalSec ?? 10;
     const lowBatteryThreshold = settings?.lowBatteryThreshold ?? 20;
     let deviceAction = {
       geofenceBreach: false,
@@ -345,6 +347,8 @@ export async function POST(req) {
       vibrationMode: "OFF",
       vibrationPulseCount: 0,
       vibrationContinuous: false,
+      telemetryIntervalSec,
+      telemetryIntervalMs: telemetryIntervalSec * 1000,
     };
 
     const telemetry = await prisma.$transaction(async (tx) => {
@@ -360,7 +364,7 @@ export async function POST(req) {
         },
       });
 
-      if (tamperStatus === "TAMPER") {
+      if (tamperStatus === "TAMPER" && settings?.deviceTamperAlerts !== false) {
         await ensureOpenAlert(tx, {
           paroleeId,
           officerId,
@@ -374,7 +378,10 @@ export async function POST(req) {
         });
       }
 
-      if (batteryLevel <= lowBatteryThreshold) {
+      if (
+        batteryLevel <= lowBatteryThreshold &&
+        settings?.lowBatteryAlerts !== false
+      ) {
         await ensureOpenAlert(tx, {
           paroleeId,
           officerId,
@@ -426,7 +433,10 @@ export async function POST(req) {
         geofenceHighImmediate = true;
       }
 
-      if (geofenceProblem || geofenceWarning) {
+      if (
+        (geofenceProblem || geofenceWarning) &&
+        settings?.geofenceBreachAlerts !== false
+      ) {
         const geofenceBreach = Boolean(geofenceProblem);
         const alertMessage = geofenceBreach ? geofenceProblem : geofenceWarning;
         const geofenceDetails = `${alertMessage} Location: ${lat.toFixed(6)}, ${lng.toFixed(6)}.`;
@@ -508,12 +518,21 @@ export async function POST(req) {
       return saved;
     });
 
+    deviceAction = {
+      ...deviceAction,
+      telemetryIntervalSec,
+      telemetryIntervalMs: telemetryIntervalSec * 1000,
+    };
+
     return NextResponse.json(
       {
         ok: true,
         data: telemetry,
         deviceAction,
+        telemetryIntervalSec,
+        telemetryIntervalMs: telemetryIntervalSec * 1000,
         serverTime: new Date().toISOString(),
+        serverTimePh: formatPhilippinesDateTime(new Date()),
       },
       { status: 201 }
     );

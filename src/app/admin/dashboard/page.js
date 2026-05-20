@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { formatPhilippinesTime } from "@/lib/time";
+import { DEFAULT_LIVE_REFRESH_MS, fetchLiveRefreshMs } from "@/lib/refresh";
+import { logoutAndRedirect } from "@/lib/session";
 
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
@@ -31,7 +34,7 @@ const btnSecondary =
 const btnDanger =
   "inline-flex items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/15 px-4 py-2 text-sm font-medium text-rose-100 transition hover:bg-rose-500/25 active:scale-[0.99]";
 
-const REFRESH_MS = 10000; // 10 seconds
+const REFRESH_MS = DEFAULT_LIVE_REFRESH_MS;
 
 async function readJsonSafe(res) {
   try {
@@ -58,12 +61,57 @@ export default function AdminDashboardPage() {
   const [mapError, setMapError] = useState("");
   const [lastSync, setLastSync] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [alertNotice, setAlertNotice] = useState(null);
 
   const defaultCenter = [7.9064, 125.0942];
 
   const aliveRef = useRef(true);
   const inFlightRef = useRef(false);
   const intervalRef = useRef(null);
+  const knownAlertIdsRef = useRef(new Set());
+  const notificationsReadyRef = useRef(false);
+
+  function notifyNewAlerts(nextAlerts) {
+    const openAlerts = nextAlerts.filter((alert) => alert.status !== "RESOLVED");
+    const nextIds = new Set(openAlerts.map((alert) => alert.id).filter(Boolean));
+
+    if (!notificationsReadyRef.current) {
+      knownAlertIdsRef.current = nextIds;
+      notificationsReadyRef.current = true;
+      return;
+    }
+
+    const newAlerts = openAlerts.filter(
+      (alert) => alert.id && !knownAlertIdsRef.current.has(alert.id)
+    );
+
+    knownAlertIdsRef.current = nextIds;
+    if (!newAlerts.length) return;
+
+    const alert = newAlerts[0];
+    const parolee = alert.parolee || "Unknown parolee";
+    const title = "New alert detected";
+    const body = `${alert.type} alert for ${parolee}`;
+
+    setAlertNotice({
+      id: alert.id,
+      title,
+      body,
+      time: alert.time || formatPhilippinesTime(new Date()),
+    });
+
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+
+    if (Notification.permission === "granted") {
+      new Notification(title, { body });
+    } else if (Notification.permission === "default") {
+      Notification.requestPermission().then((permission) => {
+        if (permission === "granted") {
+          new Notification(title, { body });
+        }
+      });
+    }
+  }
 
   useEffect(() => {
     aliveRef.current = true;
@@ -129,7 +177,9 @@ export default function AdminDashboardPage() {
 
         setParolees(Array.isArray(paroleesData?.items) ? paroleesData.items : []);
         setOfficers(Array.isArray(officersData?.items) ? officersData.items : []);
-        setAlerts(Array.isArray(alertsData?.items) ? alertsData.items : []);
+        const nextAlerts = Array.isArray(alertsData?.items) ? alertsData.items : [];
+        setAlerts(nextAlerts);
+        notifyNewAlerts(nextAlerts);
         setMarkers(Array.isArray(liveData?.items) ? liveData.items : []);
         setMapError("");
         setLastSync(new Date());
@@ -152,7 +202,10 @@ export default function AdminDashboardPage() {
     }
 
     loadDashboard();
-    intervalRef.current = setInterval(loadDashboard, REFRESH_MS);
+    fetchLiveRefreshMs(REFRESH_MS).then((refreshMs) => {
+      if (!aliveRef.current) return;
+      intervalRef.current = setInterval(loadDashboard, refreshMs);
+    });
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
@@ -247,7 +300,7 @@ export default function AdminDashboardPage() {
                 </div>
 
                 <button
-                  onClick={() => router.push("/login")}
+                  onClick={() => logoutAndRedirect("/login")}
                   className={`${btnDanger} mt-3 w-full`}
                 >
                   Logout
@@ -262,7 +315,7 @@ export default function AdminDashboardPage() {
                 {loading
                   ? "Loading dashboard..."
                   : lastSync
-                  ? `Last sync: ${lastSync.toLocaleTimeString()}`
+                  ? `Last sync: ${formatPhilippinesTime(lastSync)}`
                   : "Waiting for data..."}
               </div>
 
@@ -273,6 +326,24 @@ export default function AdminDashboardPage() {
                 Refresh
               </button>
             </div>
+
+            {alertNotice && (
+              <div className="rounded-[24px] border border-rose-300/25 bg-rose-500/15 p-4 text-rose-50 shadow-[0_10px_30px_rgba(0,0,0,0.22)]">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold">{alertNotice.title}</div>
+                    <div className="mt-1 text-sm text-rose-100/90">{alertNotice.body}</div>
+                    <div className="mt-1 text-xs text-rose-100/70">{alertNotice.time}</div>
+                  </div>
+                  <button
+                    className="rounded-lg border border-white/10 px-2 py-1 text-xs text-white hover:bg-white/10"
+                    onClick={() => setAlertNotice(null)}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {stats.map((s) => (
@@ -478,7 +549,7 @@ export default function AdminDashboardPage() {
                     </Link>
                     <div className="text-xs text-slate-400">
                       {lastSync
-                        ? `Updated: ${lastSync.toLocaleTimeString()}`
+                        ? `Updated: ${formatPhilippinesTime(lastSync)}`
                         : "Waiting for data…"}
                     </div>
                   </div>

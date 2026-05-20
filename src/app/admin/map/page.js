@@ -3,6 +3,8 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { formatPhilippinesTime } from "@/lib/time";
+import { DEFAULT_LIVE_REFRESH_MS, fetchLiveRefreshMs } from "@/lib/refresh";
 
 // Load react-leaflet client-side only
 const MapContainer = dynamic(
@@ -50,7 +52,12 @@ const defaultCenter = useMemo(
     }
 
     load();
-    const t = setInterval(load, 3000); // realtime-like polling
+    let t = null;
+    fetchLiveRefreshMs(DEFAULT_LIVE_REFRESH_MS).then((refreshMs) => {
+      if (!alive) return;
+      t = setInterval(load, refreshMs);
+    });
+
     return () => {
       alive = false;
       clearInterval(t);
@@ -73,7 +80,7 @@ const defaultCenter = useMemo(
             <div>
               <div className="font-semibold">Realtime Map</div>
               <div className="text-xs text-slate-500">
-                {lastSync ? `Updated: ${lastSync.toLocaleTimeString()}` : "Waiting for data…"}
+                {lastSync ? `Updated: ${formatPhilippinesTime(lastSync)}` : "Waiting for data…"}
               </div>
             </div>
           </div>

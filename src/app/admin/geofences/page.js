@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { formatPhilippinesTime } from "@/lib/time";
+import { DEFAULT_LIVE_REFRESH_MS, fetchLiveRefreshMs } from "@/lib/refresh";
 
-const REFRESH_MS = 10000;
+const REFRESH_MS = DEFAULT_LIVE_REFRESH_MS;
 
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
@@ -107,13 +109,22 @@ export default function AdminGeofencesPage() {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (!document.hidden) {
-        fetchLiveLocations(false);
-      }
-    }, REFRESH_MS);
+    let active = true;
+    let interval = null;
 
-    return () => clearInterval(interval);
+    fetchLiveRefreshMs(REFRESH_MS).then((refreshMs) => {
+      if (!active) return;
+      interval = setInterval(() => {
+        if (!document.hidden) {
+          fetchLiveLocations(false);
+        }
+      }, refreshMs);
+    });
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, []);
 
   async function fetchGeofences() {
@@ -638,7 +649,7 @@ export default function AdminGeofencesPage() {
                 <div className="flex items-center gap-2">
                   <div className="hidden text-xs text-slate-400 sm:block">
                     {lastLiveSync
-                      ? `Live sync: ${lastLiveSync.toLocaleTimeString()}`
+                      ? `Live sync: ${formatPhilippinesTime(lastLiveSync)}`
                       : "Waiting for live data..."}
                   </div>
                   <button className={btnSecondary} onClick={handleMapTools}>

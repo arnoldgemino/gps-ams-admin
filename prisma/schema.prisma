@@ -217,7 +217,7 @@ model SystemSettings {
   defaultGeofenceRadiusM Int     @default(300)
   telemetryIntervalSec   Int     @default(10)
   lowBatteryThreshold    Int     @default(20)
-  liveFeedRefreshSec     Int     @default(5)
+  liveFeedRefreshSec     Int     @default(10)
 
   geofenceBreachAlerts Boolean @default(true)
   deviceTamperAlerts   Boolean @default(true)

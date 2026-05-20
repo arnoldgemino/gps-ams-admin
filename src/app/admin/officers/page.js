@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { formatPhilippinesDateTime } from "@/lib/time";
 
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
@@ -573,7 +574,7 @@ export default function AdminOfficersPage() {
 
                           <td className="py-3 px-3 text-slate-400">
                             {r.createdAt
-                              ? new Date(r.createdAt).toLocaleString()
+                              ? formatPhilippinesDateTime(r.createdAt)
                               : "—"}
                           </td>
 
@@ -722,7 +723,7 @@ export default function AdminOfficersPage() {
                   label="Created"
                   value={
                     selectedOfficerDetail.createdAt
-                      ? new Date(selectedOfficerDetail.createdAt).toLocaleString()
+                      ? formatPhilippinesDateTime(selectedOfficerDetail.createdAt)
                       : "—"
                   }
                 />
@@ -746,7 +747,7 @@ export default function AdminOfficersPage() {
                           </div>
                           <div className="text-xs text-slate-400">
                             Assigned:{" "}
-                            {p.startAt ? new Date(p.startAt).toLocaleString() : "—"}
+                            {formatPhilippinesDateTime(p.startAt, "—")}
                           </div>
                         </div>
                       ))}

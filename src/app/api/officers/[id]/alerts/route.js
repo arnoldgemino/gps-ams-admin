@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { runOfflineAlertCheck } from "@/lib/offline-alerts";
 import { getAlertSeverity } from "@/lib/alert-severity";
+import { formatPhilippinesDateTime } from "@/lib/time";
 
 function jsonNoCache(data, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -139,7 +140,8 @@ export async function GET(req, { params }) {
         severity: getAlertSeverity(a.type, a.details),
         status: a.status,
         location: telemetry ? `${telemetry.lat}, ${telemetry.lng}` : "Unknown",
-        time: a.createdAt ? new Date(a.createdAt).toLocaleString() : "-",
+        time: formatPhilippinesDateTime(a.createdAt),
+        createdAt: a.createdAt,
         details: a.details || "",
         message: a.details || `${a.type} alert for ${paroleeLabel}`,
         officerId: officer.id,

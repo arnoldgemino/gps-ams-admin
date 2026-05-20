@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { runOfflineAlertCheck } from "@/lib/offline-alerts";
+import { formatPhilippinesDateTime } from "@/lib/time";
 
 function jsonNoCache(data, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -43,7 +44,9 @@ export async function GET() {
       parolee: a.parolee?.fullName || a.paroleeId,
       type: a.type,
       details: a.details || "—",
-      time: new Date(a.createdAt).toLocaleString(),
+      status: "OPEN",
+      time: formatPhilippinesDateTime(a.createdAt),
+      createdAt: a.createdAt,
       officer: a.officer?.fullName || "—",
     }));
 

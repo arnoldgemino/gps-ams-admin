@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOfflineThresholdSec } from "@/lib/offline-alerts";
+import { formatPhilippinesDateTime } from "@/lib/time";
 
 function jsonNoCache(data, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -81,7 +82,8 @@ export async function GET() {
       name: row.parolee?.fullName || row.paroleeId,
       lat: row.lat,
       lng: row.lng,
-      lastSeen: row.createdAt ? new Date(row.createdAt).toLocaleString() : "—",
+      lastSeen: formatPhilippinesDateTime(row.createdAt, "—"),
+      lastSeenAt: row.createdAt,
       status: alertSet.has(row.paroleeId) ? "ALERT" : "COMPLIANT",
     }));
 

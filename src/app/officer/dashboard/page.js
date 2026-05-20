@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { formatPhilippinesDateTime, formatPhilippinesTime } from "@/lib/time";
+import { DEFAULT_LIVE_REFRESH_MS, fetchLiveRefreshMs } from "@/lib/refresh";
 
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
@@ -37,7 +39,7 @@ const btnGhost =
 const btnDanger =
   "inline-flex items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/15 px-4 py-2 text-sm font-medium text-rose-100 transition hover:bg-rose-500/25 active:scale-[0.99]";
 
-const REFRESH_MS = 10000;
+const REFRESH_MS = DEFAULT_LIVE_REFRESH_MS;
 
 function normalizeList(payload) {
   if (Array.isArray(payload)) return payload;
@@ -57,6 +59,51 @@ export default function OfficerDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [workingAlertId, setWorkingAlertId] = useState("");
   const [error, setError] = useState("");
+  const [alertNotice, setAlertNotice] = useState(null);
+  const knownAlertIdsRef = useRef(new Set());
+  const notificationsReadyRef = useRef(false);
+
+  function notifyNewAlerts(nextAlerts) {
+    const openAlerts = nextAlerts.filter((alert) => alert.status === "OPEN");
+    const nextIds = new Set(openAlerts.map((alert) => alert.id).filter(Boolean));
+
+    if (!notificationsReadyRef.current) {
+      knownAlertIdsRef.current = nextIds;
+      notificationsReadyRef.current = true;
+      return;
+    }
+
+    const newAlerts = openAlerts.filter(
+      (alert) => alert.id && !knownAlertIdsRef.current.has(alert.id)
+    );
+
+    knownAlertIdsRef.current = nextIds;
+    if (!newAlerts.length) return;
+
+    const alert = newAlerts[0];
+    const parolee = alert.paroleeLabel || alert.paroleeId || "Unknown parolee";
+    const title = "New assigned alert";
+    const body = `${alert.type} alert for ${parolee}`;
+
+    setAlertNotice({
+      id: alert.id,
+      title,
+      body,
+      time: alert.time || formatPhilippinesTime(new Date()),
+    });
+
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+
+    if (Notification.permission === "granted") {
+      new Notification(title, { body });
+    } else if (Notification.permission === "default") {
+      Notification.requestPermission().then((permission) => {
+        if (permission === "granted") {
+          new Notification(title, { body });
+        }
+      });
+    }
+  }
 
   async function fetchOfficerAlerts(id, take = 5) {
     const res = await fetch(`/api/officers/${id}/alerts?take=${take}`, {
@@ -81,6 +128,7 @@ export default function OfficerDashboardPage() {
 
     setOfficerId(id);
     setOfficerName(name || "Officer");
+    let active = true;
 
     async function loadOfficer(showLoader = true) {
       try {
@@ -109,9 +157,9 @@ export default function OfficerDashboardPage() {
             lastLat: Number.isFinite(Number(item.lat)) ? Number(item.lat) : null,
             lastLng: Number.isFinite(Number(item.lng)) ? Number(item.lng) : null,
             lastSeen: item.lastSeen
-              ? new Date(item.lastSeen).toLocaleString()
+              ? formatPhilippinesDateTime(item.lastSeen)
               : item.startAt
-              ? new Date(item.startAt).toLocaleString()
+              ? formatPhilippinesDateTime(item.startAt)
               : "-",
             status: item.status || "ASSIGNED",
           }))
@@ -119,6 +167,7 @@ export default function OfficerDashboardPage() {
 
         const officerAlerts = await fetchOfficerAlerts(id, 5);
         setAlerts(officerAlerts);
+        notifyNewAlerts(officerAlerts);
       } catch (err) {
         console.error(err);
         setError(err.message || "Unable to load officer details");
@@ -130,13 +179,20 @@ export default function OfficerDashboardPage() {
     }
 
     loadOfficer();
-    const interval = setInterval(() => {
-      if (!document.hidden) {
-        loadOfficer(false);
-      }
-    }, REFRESH_MS);
+    let interval = null;
+    fetchLiveRefreshMs(REFRESH_MS).then((refreshMs) => {
+      if (!active) return;
+      interval = setInterval(() => {
+        if (!document.hidden) {
+          loadOfficer(false);
+        }
+      }, refreshMs);
+    });
 
-    return () => clearInterval(interval);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, [router]);
 
   async function handleAlertAction(alertId, action) {
@@ -285,6 +341,24 @@ export default function OfficerDashboardPage() {
             {loading && (
               <div className="rounded-[28px] border border-white/10 bg-black/20 p-4 text-center text-sm text-slate-300">
                 Loading dashboard...
+              </div>
+            )}
+
+            {alertNotice && (
+              <div className="rounded-[24px] border border-rose-300/25 bg-rose-500/15 p-4 text-rose-50 shadow-[0_10px_30px_rgba(0,0,0,0.22)]">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold">{alertNotice.title}</div>
+                    <div className="mt-1 text-sm text-rose-100/90">{alertNotice.body}</div>
+                    <div className="mt-1 text-xs text-rose-100/70">{alertNotice.time}</div>
+                  </div>
+                  <button
+                    className="rounded-lg border border-white/10 px-2 py-1 text-xs text-white hover:bg-white/10"
+                    onClick={() => setAlertNotice(null)}
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </div>
             )}
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { formatPhilippinesDateTime } from "@/lib/time";
 
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
@@ -35,7 +36,7 @@ export default function AdminSettingsPage() {
     defaultGeofenceRadiusM: "300",
     telemetryIntervalSec: "10",
     lowBatteryThreshold: "20",
-    liveFeedRefreshSec: "5",
+    liveFeedRefreshSec: "10",
     geofenceBreachAlerts: true,
     deviceTamperAlerts: true,
     lowBatteryAlerts: true,
@@ -92,7 +93,11 @@ export default function AdminSettingsPage() {
           defaultGeofenceRadiusM: String(settingsData.defaultGeofenceRadiusM ?? "300"),
           telemetryIntervalSec: String(settingsData.telemetryIntervalSec ?? "10"),
           lowBatteryThreshold: String(settingsData.lowBatteryThreshold ?? "20"),
-          liveFeedRefreshSec: String(settingsData.liveFeedRefreshSec ?? "5"),
+          liveFeedRefreshSec: String(
+            settingsData.telemetryIntervalSec ??
+              settingsData.liveFeedRefreshSec ??
+              "10"
+          ),
           geofenceBreachAlerts: Boolean(settingsData.geofenceBreachAlerts),
           deviceTamperAlerts: Boolean(settingsData.deviceTamperAlerts),
           lowBatteryAlerts: Boolean(settingsData.lowBatteryAlerts),
@@ -647,7 +652,7 @@ export default function AdminSettingsPage() {
                             <div className="space-y-2">
                               {logs.map((log) => (
                                 <div key={log.id}>
-                                  [{new Date(log.createdAt).toLocaleString()}] {log.action}
+                                  [{formatPhilippinesDateTime(log.createdAt)}] {log.action}
                                 </div>
                               ))}
                             </div>

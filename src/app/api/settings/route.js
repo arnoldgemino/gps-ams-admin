@@ -13,7 +13,7 @@ async function getOrCreateSettings() {
         defaultGeofenceRadiusM: 300,
         telemetryIntervalSec: 10,
         lowBatteryThreshold: 20,
-        liveFeedRefreshSec: 5,
+        liveFeedRefreshSec: 10,
         geofenceBreachAlerts: true,
         deviceTamperAlerts: true,
         lowBatteryAlerts: true,
@@ -44,7 +44,7 @@ export async function PUT(req) {
     const current = await getOrCreateSettings();
 
     const telemetryIntervalSec = Number(body.telemetryIntervalSec ?? 10);
-    const liveFeedRefreshSec = Number(body.liveFeedRefreshSec ?? telemetryIntervalSec);
+    const liveFeedRefreshSec = telemetryIntervalSec;
 
     if (!telemetryIntervalSec || telemetryIntervalSec < 1) {
       return NextResponse.json(
@@ -56,13 +56,6 @@ export async function PUT(req) {
     if (telemetryIntervalSec > 30) {
       return NextResponse.json(
         { error: "Telemetry Interval cannot exceed 30 seconds." },
-        { status: 400 }
-      );
-    }
-
-    if (liveFeedRefreshSec !== telemetryIntervalSec) {
-      return NextResponse.json(
-        { error: "Live Feed Refresh must match Telemetry Interval." },
         { status: 400 }
       );
     }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { formatPhilippinesDateTime } from "@/lib/time";
 
 const DEVICE_INFO_SERVICE = 0x180a;
 const MODEL_NUMBER_CHAR = 0x2a24;
@@ -674,7 +675,7 @@ export default function AdminDevicesPage() {
                           <td className="px-3 py-3 text-slate-400">
                             {r.liveState === "ONLINE"
                               ? r.lastPing
-                                ? new Date(r.lastPing).toLocaleString()
+                                ? formatPhilippinesDateTime(r.lastPing)
                                 : "—"
                               : "OFFLINE"}
                           </td>
@@ -826,7 +827,7 @@ export default function AdminDevicesPage() {
                   label="Created"
                   value={
                     selectedDeviceDetail.createdAt
-                      ? new Date(selectedDeviceDetail.createdAt).toLocaleString()
+                      ? formatPhilippinesDateTime(selectedDeviceDetail.createdAt)
                       : "—"
                   }
                 />
@@ -838,7 +839,7 @@ export default function AdminDevicesPage() {
                   label="Last Ping"
                   value={
                     selectedDeviceDetail.latestTelemetry?.createdAt
-                      ? new Date(selectedDeviceDetail.latestTelemetry.createdAt).toLocaleString()
+                      ? formatPhilippinesDateTime(selectedDeviceDetail.latestTelemetry.createdAt)
                       : "—"
                   }
                 />

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { formatPhilippinesDateTime } from "@/lib/time";
 
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
@@ -80,7 +81,7 @@ export default function OfficerMapPage() {
               battery: p.batteryLevel ?? "-",
               signal: p.signal ?? "-",
               tamper: p.tamper || "OK",
-              lastSeen: p.lastSeen ? new Date(p.lastSeen).toLocaleString() : "-",
+              lastSeen: formatPhilippinesDateTime(p.lastSeen),
             };
           })
           .filter((p) => p.hasLocation);

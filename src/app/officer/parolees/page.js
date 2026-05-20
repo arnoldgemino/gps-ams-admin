@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { formatPhilippinesDateTime } from "@/lib/time";
 
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
@@ -66,7 +67,7 @@ export default function OfficerParoleesPage() {
           battery: p.batteryLevel != null ? String(p.batteryLevel) : "—",
           signal: p.signal || "—",
           tamper: p.tamper || "—",
-          lastSeen: p.lastSeen ? new Date(p.lastSeen).toLocaleString() : "—",
+          lastSeen: formatPhilippinesDateTime(p.lastSeen, "—"),
           compliance: p.status || "OFFLINE",
         }));
 
