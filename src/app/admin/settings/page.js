@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatPhilippinesDateTime } from "@/lib/time";
+import { logoutAndRedirect } from "@/lib/session";
 
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
@@ -347,7 +348,12 @@ export default function AdminSettingsPage() {
                     <div className="text-xs text-slate-300/70">Logged in</div>
                   </div>
                 </div>
-                <button className={`${btnDanger} mt-3 w-full`}>Logout</button>
+                <button
+                  onClick={() => logoutAndRedirect("/login")}
+                  className={`${btnDanger} mt-3 w-full`}
+                >
+                  Logout
+                </button>
               </div>
             </div>
           </aside>

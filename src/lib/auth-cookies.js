@@ -5,6 +5,7 @@ export const SESSION_COOKIE_OPTIONS = {
   httpOnly: true,
   sameSite: "lax",
   path: "/",
+  secure: process.env.NODE_ENV === "production",
 };
 
 export function sessionMaxAge(stayLoggedIn) {

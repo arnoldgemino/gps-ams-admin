@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatPhilippinesDateTime } from "@/lib/time";
+import { logoutAndRedirect } from "@/lib/session";
 
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
@@ -34,8 +34,6 @@ function normalizeList(payload) {
 }
 
 export default function AdminParoleesPage() {
-  const router = useRouter();
-
   const [rows, setRows] = useState([]);
   const [officers, setOfficers] = useState([]);
   const [devices, setDevices] = useState([]);
@@ -74,21 +72,7 @@ export default function AdminParoleesPage() {
     deviceId: "",
   });
 
-  useEffect(() => {
-    loadPage();
-  }, []);
-
-  async function loadPage() {
-    try {
-      setLoadingPage(true);
-      setPageError("");
-      await fetchParolees(true);
-    } finally {
-      setLoadingPage(false);
-    }
-  }
-
-  async function fetchParolees(showPageError = false) {
+  const fetchParolees = useCallback(async (showPageError = false) => {
     try {
       const res = await fetch("/api/parolees", { cache: "no-store" });
       const data = await res.json().catch(() => ({}));
@@ -125,7 +109,21 @@ export default function AdminParoleesPage() {
         setPageError("Failed to fetch parolees");
       }
     }
-  }
+  }, []);
+
+  const loadPage = useCallback(async () => {
+    try {
+      setLoadingPage(true);
+      setPageError("");
+      await fetchParolees(true);
+    } finally {
+      setLoadingPage(false);
+    }
+  }, [fetchParolees]);
+
+  useEffect(() => {
+    loadPage();
+  }, [loadPage]);
 
   async function fetchOfficers() {
     try {
@@ -382,7 +380,7 @@ export default function AdminParoleesPage() {
   }
 
   function handleLogout() {
-    router.push("/login");
+    logoutAndRedirect("/login");
   }
 
   const filtered = useMemo(() => {

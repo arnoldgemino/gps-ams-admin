@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { prisma } from "../../../../lib/prisma.js";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(req) {
   try {
@@ -22,8 +22,9 @@ export async function POST(req) {
     }
 
     // 2️⃣ Check if email already exists
+    const normalizedEmail = String(email).trim().toLowerCase();
     const existing = await prisma.admin.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
     });
 
     if (existing) {
@@ -40,7 +41,7 @@ export async function POST(req) {
     const admin = await prisma.admin.create({
       data: {
         fullName,
-        email,
+        email: normalizedEmail,
         password: hashedPassword,
         role: "ADMIN",
       },

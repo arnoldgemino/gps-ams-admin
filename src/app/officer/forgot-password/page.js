@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
-export default function ForgotPasswordPage() {
+export default function OfficerForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [token, setToken] = useState("");
   const [password, setPassword] = useState("");
@@ -26,7 +26,7 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/forgot-password", {
+      const res = await fetch("/api/auth/officer/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
@@ -68,7 +68,7 @@ export default function ForgotPasswordPage() {
       const res = await fetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, password, accountType: "admin" }),
+        body: JSON.stringify({ token, password, accountType: "officer" }),
       });
       const data = await res.json().catch(() => ({}));
 
@@ -95,12 +95,12 @@ export default function ForgotPasswordPage() {
       <div className="relative z-10 flex min-h-screen items-center justify-center px-4">
         <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur-xl">
           <h1 className="text-2xl font-bold">
-            {token ? "Reset Admin Password" : "Forgot Password"}
+            {token ? "Reset Officer Password" : "Officer Forgot Password"}
           </h1>
           <p className="mt-2 text-sm text-slate-300">
             {token
-              ? "Create a new password for your admin account."
-              : "Enter your admin email to generate a reset link."}
+              ? "Create a new password for your officer account."
+              : "Enter your officer email to generate a reset link."}
           </p>
 
           <form onSubmit={token ? resetPassword : requestReset} className="mt-6 space-y-3">
@@ -129,7 +129,7 @@ export default function ForgotPasswordPage() {
               <input
                 type="email"
                 className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-white outline-none placeholder:text-white/50"
-                placeholder="Admin email"
+                placeholder="Officer email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
@@ -162,8 +162,11 @@ export default function ForgotPasswordPage() {
             </button>
           </form>
 
-          <Link href="/login" className="mt-4 block text-center text-sm text-white/70 underline">
-            Back to admin login
+          <Link
+            href="/officer/login"
+            className="mt-4 block text-center text-sm text-white/70 underline"
+          >
+            Back to officer login
           </Link>
         </div>
       </div>

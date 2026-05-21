@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { formatPhilippinesTime } from "@/lib/time";
 import { DEFAULT_LIVE_REFRESH_MS, fetchLiveRefreshMs } from "@/lib/refresh";
+import { logoutAndRedirect } from "@/lib/session";
 
 const REFRESH_MS = DEFAULT_LIVE_REFRESH_MS;
 
@@ -59,8 +59,6 @@ function normalizeList(payload) {
 }
 
 export default function AdminGeofencesPage() {
-  const router = useRouter();
-
   const [rows, setRows] = useState([]);
   const [parolees, setParolees] = useState([]);
   const [liveLocations, setLiveLocations] = useState([]);
@@ -609,7 +607,7 @@ export default function AdminGeofencesPage() {
                 </div>
 
                 <button
-                  onClick={() => router.push("/login")}
+                  onClick={() => logoutAndRedirect("/login")}
                   className={`${btnDanger} mt-3 w-full`}
                 >
                   Logout

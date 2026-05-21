@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { setClientStorageItem } from "@/lib/session";
@@ -11,8 +11,17 @@ export default function OfficerLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [stayLoggedIn, setStayLoggedIn] = useState(false);
+  const [nextPath, setNextPath] = useState("/officer/dashboard");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const next = params.get("next");
+    if (next?.startsWith("/officer") && next !== "/officer/forgot-password") {
+      setNextPath(next);
+    }
+  }, []);
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -40,7 +49,7 @@ export default function OfficerLoginPage() {
       setClientStorageItem("officerBadgeId", data.officer?.badgeId || "", stayLoggedIn);
       setClientStorageItem("officerLoggedInAt", new Date().toISOString(), stayLoggedIn);
 
-      router.push("/officer/dashboard");
+      router.push(nextPath);
     } catch (err) {
       console.error(err);
       setError("Unable to connect to server");

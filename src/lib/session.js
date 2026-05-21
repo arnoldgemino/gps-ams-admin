@@ -3,12 +3,19 @@ export function getClientStorageItem(key) {
   return sessionStorage.getItem(key) ?? localStorage.getItem(key);
 }
 
+export function getClientSessionPersistence(key = "role") {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(key) != null;
+}
+
 export function setClientStorageItem(key, value, stayLoggedIn = false) {
   if (typeof window === "undefined") return;
   if (stayLoggedIn) {
     localStorage.setItem(key, value);
+    sessionStorage.removeItem(key);
   } else {
     sessionStorage.setItem(key, value);
+    localStorage.removeItem(key);
   }
 }
 

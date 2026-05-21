@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import {
+  getClientSessionPersistence,
+  getClientStorageItem,
+  logoutAndRedirect,
+  setClientStorageItem,
+} from "@/lib/session";
 
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
@@ -40,7 +46,7 @@ export default function OfficerProfilePage() {
   const [confirm, setConfirm] = useState("");
 
   useEffect(() => {
-    const id = typeof window !== "undefined" ? localStorage.getItem("officerId") : null;
+    const id = getClientStorageItem("officerId");
     if (!id) {
       router.push("/officer/login");
       return;
@@ -48,9 +54,9 @@ export default function OfficerProfilePage() {
 
     setOfficerId(id);
 
-    const name = localStorage.getItem("officerName");
-    const emailValue = localStorage.getItem("officerEmail");
-    const badge = localStorage.getItem("officerBadgeId");
+    const name = getClientStorageItem("officerName");
+    const emailValue = getClientStorageItem("officerEmail");
+    const badge = getClientStorageItem("officerBadgeId");
 
     setOfficerName(name || "Officer");
     setOfficerEmail(emailValue || "");
@@ -77,11 +83,10 @@ export default function OfficerProfilePage() {
         setPhone(data.phone || "");
         setArea(data.assignedParolees?.length ? `Assigned ${data.assignedParolees.length} parolee(s)` : "—");
 
-        if (typeof window !== "undefined") {
-          localStorage.setItem("officerName", data.fullName || name || "Officer");
-          localStorage.setItem("officerEmail", data.email || emailValue || "");
-          localStorage.setItem("officerBadgeId", data.badgeId || badge || "");
-        }
+        const stayLoggedIn = getClientSessionPersistence("officerId");
+        setClientStorageItem("officerName", data.fullName || name || "Officer", stayLoggedIn);
+        setClientStorageItem("officerEmail", data.email || emailValue || "", stayLoggedIn);
+        setClientStorageItem("officerBadgeId", data.badgeId || badge || "", stayLoggedIn);
       } catch (err) {
         console.error(err);
         setError("Unable to load profile");
@@ -94,12 +99,7 @@ export default function OfficerProfilePage() {
   }, [router]);
 
   function handleLogout() {
-    localStorage.removeItem("role");
-    localStorage.removeItem("officerId");
-    localStorage.removeItem("officerName");
-    localStorage.removeItem("officerEmail");
-    localStorage.removeItem("officerBadgeId");
-    window.location.href = "/officer/login";
+    logoutAndRedirect("/officer/login");
   }
 
   const quick = useMemo(
@@ -155,9 +155,12 @@ export default function OfficerProfilePage() {
         throw new Error(data.error || "Unable to save profile");
       }
 
-      localStorage.setItem("officerName", fullName);
-      localStorage.setItem("officerEmail", email);
-      if (officerBadge) localStorage.setItem("officerBadgeId", officerBadge);
+      const stayLoggedIn = getClientSessionPersistence("officerId");
+      setClientStorageItem("officerName", fullName, stayLoggedIn);
+      setClientStorageItem("officerEmail", email, stayLoggedIn);
+      if (officerBadge) {
+        setClientStorageItem("officerBadgeId", officerBadge, stayLoggedIn);
+      }
 
       setOfficerName(fullName);
       setOfficerEmail(email);

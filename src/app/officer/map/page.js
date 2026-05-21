@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { formatPhilippinesDateTime } from "@/lib/time";
+import { getClientStorageItem, logoutAndRedirect } from "@/lib/session";
 
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
@@ -99,8 +100,8 @@ export default function OfficerMapPage() {
   );
 
   useEffect(() => {
-    const id = typeof window !== "undefined" ? localStorage.getItem("officerId") : null;
-    const name = typeof window !== "undefined" ? localStorage.getItem("officerName") : null;
+    const id = getClientStorageItem("officerId");
+    const name = getClientStorageItem("officerName");
 
     if (!id) {
       router.push("/officer/login");
@@ -113,12 +114,7 @@ export default function OfficerMapPage() {
   }, [loadLivePoints, router]);
 
   function handleLogout() {
-    localStorage.removeItem("role");
-    localStorage.removeItem("officerId");
-    localStorage.removeItem("officerName");
-    localStorage.removeItem("officerEmail");
-    localStorage.removeItem("officerBadgeId");
-    router.push("/officer/login");
+    logoutAndRedirect("/officer/login");
   }
 
   async function handleRefresh() {

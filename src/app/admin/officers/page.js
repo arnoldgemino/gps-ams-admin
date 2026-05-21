@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { formatPhilippinesDateTime } from "@/lib/time";
+import { logoutAndRedirect } from "@/lib/session";
 
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
@@ -34,8 +34,6 @@ function normalizeList(payload) {
 }
 
 export default function AdminOfficersPage() {
-  const router = useRouter();
-
   const [rows, setRows] = useState([]);
   const [parolees, setParolees] = useState([]);
   const [search, setSearch] = useState("");
@@ -75,20 +73,7 @@ export default function AdminOfficersPage() {
     paroleeId: "",
   });
 
-  useEffect(() => {
-    loadPage();
-  }, []);
-
-  async function loadPage() {
-    try {
-      setLoadingPage(true);
-      await Promise.all([fetchOfficers(), fetchParolees()]);
-    } finally {
-      setLoadingPage(false);
-    }
-  }
-
-  async function fetchOfficers() {
+  const fetchOfficers = useCallback(async () => {
     try {
       const res = await fetch("/api/officers", { cache: "no-store" });
       const data = await res.json().catch(() => ({}));
@@ -115,9 +100,9 @@ export default function AdminOfficersPage() {
       console.error("Failed to fetch officers", error);
       setRows([]);
     }
-  }
+  }, []);
 
-  async function fetchParolees() {
+  const fetchParolees = useCallback(async () => {
     try {
       const res = await fetch("/api/parolees", { cache: "no-store" });
       const data = await res.json().catch(() => ({}));
@@ -139,7 +124,20 @@ export default function AdminOfficersPage() {
       console.error("Failed to fetch parolees", error);
       setParolees([]);
     }
-  }
+  }, []);
+
+  const loadPage = useCallback(async () => {
+    try {
+      setLoadingPage(true);
+      await Promise.all([fetchOfficers(), fetchParolees()]);
+    } finally {
+      setLoadingPage(false);
+    }
+  }, [fetchOfficers, fetchParolees]);
+
+  useEffect(() => {
+    loadPage();
+  }, [loadPage]);
 
   async function fetchOfficerDetail(officerId) {
     try {
@@ -351,7 +349,7 @@ export default function AdminOfficersPage() {
   }
 
   function handleLogout() {
-    router.push("/login");
+    logoutAndRedirect("/login");
   }
 
   const filtered = useMemo(() => {

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { formatPhilippinesDateTime } from "@/lib/time";
+import { logoutAndRedirect } from "@/lib/session";
 
 const DEVICE_INFO_SERVICE = 0x180a;
 const MODEL_NUMBER_CHAR = 0x2a24;
@@ -46,8 +46,6 @@ function decodeCharacteristicValue(value) {
 }
 
 export default function AdminDevicesPage() {
-  const router = useRouter();
-
   const [rows, setRows] = useState([]);
   const [parolees, setParolees] = useState([]);
   const [search, setSearch] = useState("");
@@ -82,20 +80,7 @@ export default function AdminDevicesPage() {
     paroleeId: "",
   });
 
-  useEffect(() => {
-    loadPage();
-  }, []);
-
-  async function loadPage() {
-    try {
-      setLoadingPage(true);
-      await Promise.all([fetchDevices(), fetchParolees()]);
-    } finally {
-      setLoadingPage(false);
-    }
-  }
-
-  async function fetchDevices() {
+  const fetchDevices = useCallback(async () => {
     try {
       const res = await fetch("/api/devices", { cache: "no-store" });
       const data = await res.json();
@@ -125,9 +110,9 @@ export default function AdminDevicesPage() {
       console.error("Failed to fetch devices", error);
       setRows([]);
     }
-  }
+  }, []);
 
-  async function fetchParolees() {
+  const fetchParolees = useCallback(async () => {
     try {
       const res = await fetch("/api/parolees", { cache: "no-store" });
       const data = await res.json();
@@ -149,7 +134,20 @@ export default function AdminDevicesPage() {
       console.error("Failed to fetch parolees", error);
       setParolees([]);
     }
-  }
+  }, []);
+
+  const loadPage = useCallback(async () => {
+    try {
+      setLoadingPage(true);
+      await Promise.all([fetchDevices(), fetchParolees()]);
+    } finally {
+      setLoadingPage(false);
+    }
+  }, [fetchDevices, fetchParolees]);
+
+  useEffect(() => {
+    loadPage();
+  }, [loadPage]);
 
   async function fetchDeviceDetail(deviceId) {
     if (!deviceId) {
@@ -438,7 +436,7 @@ export default function AdminDevicesPage() {
   }
 
   function handleLogout() {
-    router.push("/login");
+    logoutAndRedirect("/login");
   }
 
   const filtered = useMemo(() => {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { getClientStorageItem, logoutAndRedirect } from "@/lib/session";
 
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
@@ -69,8 +70,8 @@ export default function OfficerAlertsPage() {
   }, []);
 
   useEffect(() => {
-    const id = typeof window !== "undefined" ? localStorage.getItem("officerId") : null;
-    const name = typeof window !== "undefined" ? localStorage.getItem("officerName") : null;
+    const id = getClientStorageItem("officerId");
+    const name = getClientStorageItem("officerName");
 
     if (!id) {
       router.push("/officer/login");
@@ -158,12 +159,7 @@ export default function OfficerAlertsPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("role");
-    localStorage.removeItem("officerId");
-    localStorage.removeItem("officerName");
-    localStorage.removeItem("officerEmail");
-    localStorage.removeItem("officerBadgeId");
-    router.push("/officer/login");
+    logoutAndRedirect("/officer/login");
   }
 
   const filtered = useMemo(() => {

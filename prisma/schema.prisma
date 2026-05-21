@@ -75,6 +75,7 @@ model Admin {
 
   auditLogs          AuditLog[]
   officerAssignments OfficerParoleeAssignment[]
+  passwordResetTokens PasswordResetToken[]
 }
 
 model Officer {
@@ -90,6 +91,24 @@ model Officer {
 
   assignments OfficerParoleeAssignment[]
   alerts      Alert[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  adminId   String?
+  officerId String?
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  admin   Admin?   @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  officer Officer? @relation(fields: [officerId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([officerId])
+  @@index([expiresAt])
 }
 
 model Parolee {

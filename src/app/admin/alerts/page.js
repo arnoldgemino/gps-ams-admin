@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { logoutAndRedirect } from "@/lib/session";
 
 const REFRESH_MS = 10000;
 
@@ -35,8 +35,6 @@ function normalizeList(payload) {
 }
 
 export default function AdminAlertsPage() {
-  const router = useRouter();
-
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("ALL");
@@ -53,29 +51,9 @@ export default function AdminAlertsPage() {
   const aliveRef = useRef(true);
   const fetchInFlightRef = useRef(false);
   const offlineCheckCounterRef = useRef(0);
+  const selectedAlertIdRef = useRef(null);
 
-  useEffect(() => {
-    aliveRef.current = true;
-    fetchAlerts(true);
-
-    return () => {
-      aliveRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!liveFeed) return;
-
-    const interval = setInterval(() => {
-      if (!document.hidden) {
-        fetchAlerts(false);
-      }
-    }, REFRESH_MS);
-
-    return () => clearInterval(interval);
-  }, [liveFeed]);
-
-  async function runOfflineCheck() {
+  const runOfflineCheck = useCallback(async () => {
     try {
       await fetch("/api/alerts/offline-check", {
         method: "POST",
@@ -84,9 +62,9 @@ export default function AdminAlertsPage() {
     } catch (error) {
       console.error("offline-check failed:", error);
     }
-  }
+  }, []);
 
-  async function fetchAlerts(showLoader = true) {
+  const fetchAlerts = useCallback(async (showLoader = true) => {
     if (fetchInFlightRef.current) return;
 
     try {
@@ -113,8 +91,10 @@ export default function AdminAlertsPage() {
 
       setRows(normalizeList(data));
 
-      if (selectedAlert?.id) {
-        const updated = normalizeList(data).find((item) => item.id === selectedAlert.id);
+      if (selectedAlertIdRef.current) {
+        const updated = normalizeList(data).find(
+          (item) => item.id === selectedAlertIdRef.current
+        );
         if (updated) {
           setSelectedAlert(updated);
         }
@@ -130,7 +110,32 @@ export default function AdminAlertsPage() {
         setLoading(false);
       }
     }
-  }
+  }, [runOfflineCheck]);
+
+  useEffect(() => {
+    selectedAlertIdRef.current = selectedAlert?.id || null;
+  }, [selectedAlert?.id]);
+
+  useEffect(() => {
+    aliveRef.current = true;
+    fetchAlerts(true);
+
+    return () => {
+      aliveRef.current = false;
+    };
+  }, [fetchAlerts]);
+
+  useEffect(() => {
+    if (!liveFeed) return;
+
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        fetchAlerts(false);
+      }
+    }, REFRESH_MS);
+
+    return () => clearInterval(interval);
+  }, [fetchAlerts, liveFeed]);
 
   async function fetchAlertDetail(alertId, showAlertOnError = true) {
     try {
@@ -363,7 +368,7 @@ export default function AdminAlertsPage() {
 
                 <button
                   className={`${btnDanger} mt-3 w-full`}
-                  onClick={() => router.push("/login")}
+                  onClick={() => logoutAndRedirect("/login")}
                 >
                   Logout
                 </button>

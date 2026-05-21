@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatPhilippinesDateTime } from "@/lib/time";
+import { getClientStorageItem, logoutAndRedirect } from "@/lib/session";
 
 const sectionCard =
   "rounded-[28px] border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.35)]";
@@ -36,8 +37,8 @@ export default function OfficerParoleesPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const id = typeof window !== "undefined" ? localStorage.getItem("officerId") : null;
-    const name = typeof window !== "undefined" ? localStorage.getItem("officerName") : null;
+    const id = getClientStorageItem("officerId");
+    const name = getClientStorageItem("officerName");
 
     if (!id) {
       router.push("/officer/login");
@@ -125,9 +126,9 @@ export default function OfficerParoleesPage() {
               <Link href="/officer/dashboard" className={btnGhost}>
                 ← Dashboard
               </Link>
-              <Link href="/officer/login" className={btnDanger}>
+              <button type="button" onClick={() => logoutAndRedirect("/officer/login")} className={btnDanger}>
                 Logout
-              </Link>
+              </button>
             </div>
           </div>
         </header>
@@ -157,9 +158,13 @@ export default function OfficerParoleesPage() {
                     </div>
                   </div>
                 </div>
-                <Link href="/officer/login" className={`${btnDanger} mt-3 w-full`}>
+                <button
+                  type="button"
+                  onClick={() => logoutAndRedirect("/officer/login")}
+                  className={`${btnDanger} mt-3 w-full`}
+                >
                   Logout
-                </Link>
+                </button>
               </div>
             </div>
           </aside>

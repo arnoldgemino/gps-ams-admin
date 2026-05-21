@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { setClientStorageItem } from "@/lib/session";
@@ -11,8 +11,17 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [stayLoggedIn, setStayLoggedIn] = useState(false);
+  const [nextPath, setNextPath] = useState("/admin/dashboard");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const next = params.get("next");
+    if (next?.startsWith("/admin")) {
+      setNextPath(next);
+    }
+  }, []);
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -37,7 +46,7 @@ export default function LoginPage() {
       setClientStorageItem("adminEmail", email, stayLoggedIn);
       setClientStorageItem("adminLoggedInAt", new Date().toISOString(), stayLoggedIn);
 
-      router.push("/admin/dashboard");
+      router.push(nextPath);
     } catch (err) {
       console.error(err);
       setError("Unable to connect to server");

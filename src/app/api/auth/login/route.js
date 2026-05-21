@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { prisma } from "../../../../lib/prisma.js";
+import { prisma } from "@/lib/prisma";
 import {
   ADMIN_SESSION_COOKIE,
+  OFFICER_SESSION_COOKIE,
   SESSION_COOKIE_OPTIONS,
   sessionMaxAge,
 } from "@/lib/auth-cookies";
@@ -40,6 +41,7 @@ export async function POST(req) {
       maxAge: sessionMaxAge(Boolean(stayLoggedIn)),
     });
     res.cookies.delete("admin_session");
+    res.cookies.delete(OFFICER_SESSION_COOKIE);
 
     return res;
   } catch (err) {

@@ -6,6 +6,12 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { formatPhilippinesDateTime, formatPhilippinesTime } from "@/lib/time";
 import { DEFAULT_LIVE_REFRESH_MS, fetchLiveRefreshMs } from "@/lib/refresh";
+import {
+  getClientSessionPersistence,
+  getClientStorageItem,
+  logoutAndRedirect,
+  setClientStorageItem,
+} from "@/lib/session";
 
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
@@ -119,8 +125,8 @@ export default function OfficerDashboardPage() {
   }
 
   useEffect(() => {
-    const id = typeof window !== "undefined" ? localStorage.getItem("officerId") : null;
-    const name = typeof window !== "undefined" ? localStorage.getItem("officerName") : null;
+    const id = getClientStorageItem("officerId");
+    const name = getClientStorageItem("officerName");
     if (!id) {
       router.push("/officer/login");
       return;
@@ -142,9 +148,10 @@ export default function OfficerDashboardPage() {
         }
 
         setOfficerName(data.fullName || name || "Officer");
-        localStorage.setItem("officerName", data.fullName || "Officer");
-        localStorage.setItem("officerEmail", data.email || "");
-        localStorage.setItem("officerBadgeId", data.badgeId || "");
+        const stayLoggedIn = getClientSessionPersistence("officerId");
+        setClientStorageItem("officerName", data.fullName || "Officer", stayLoggedIn);
+        setClientStorageItem("officerEmail", data.email || "", stayLoggedIn);
+        setClientStorageItem("officerBadgeId", data.badgeId || "", stayLoggedIn);
         setAssigned(
           (data.assignedParolees || []).map((item) => ({
             id: item.id,
@@ -223,12 +230,7 @@ export default function OfficerDashboardPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("role");
-    localStorage.removeItem("officerId");
-    localStorage.removeItem("officerName");
-    localStorage.removeItem("officerEmail");
-    localStorage.removeItem("officerBadgeId");
-    router.push("/officer/login");
+    logoutAndRedirect("/officer/login");
   }
 
   const assignedWithLocation = useMemo(
